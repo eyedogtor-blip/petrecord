@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PetRecord - Pet Health Records</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: { 50:'#eff6ff',100:'#dbeafe',200:'#bfdbfe',300:'#93c5fd',400:'#60a5fa',500:'#3b82f6',600:'#2563eb',700:'#1d4ed8',800:'#1e40af',900:'#1e3a8a' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .icon { width: 20px; height: 20px; }
+    .icon-sm { width: 16px; height: 16px; }
+    .icon-lg { width: 24px; height: 24px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, createContext, useContext } = React;
+
+    // Auth Context
+    const AuthContext = createContext(null);
+    
+    function AuthProvider({ children }) {
+      const [user, setUser] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [token, setToken] = useState(localStorage.getItem('petrecord_token'));
+
+      useEffect(() => {
+        if (token) {
+          fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(setUser)
+            .catch(() => { localStorage.removeItem('petrecord_token'); setToken(null); })
+            .finally(() => setLoading(false));
+        } else {
+          setLoading(false);
+        }
+      }, [token]);
+
+      const login = async (email, password) => {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        localStorage.setItem('petrecord_token', data.token);
+        setToken(data.token);
+        setUser(data.user);
+      };
+
+      const register = async (email, password, firstName, lastName) => {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, firstName, lastName })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        localStorage.setItem('petrecord_token', data.token);
+        setToken(data.token);
+        setUser(data.user);
+      };
+
+      const logout = () => {
+        localStorage.removeItem('petrecord_token');
+        setToken(null);
+        setUser(null);
+      };
+
+      return (
+        <AuthContext.Provider value={{ user, token, loading, login, register, logout, isAuthenticated: !!user }}>
+          {children}
+        </AuthContext.Provider>
+      );
+    }
+
+    const useAuth = () => useContext(AuthContext);
+
+    // API helper
+    const api = {
+      get: (url) => fetch(url, { headers: { Authorization: `Bearer ${localStorage.getItem('petrecord_token')}` } }).then(r => r.json()),
+      post: (url, data) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('petrecord_token')}` }, body: JSON.stringify(data) }).then(r => r.json()),
+      delete: (url) => fetch(url, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('petrecord_token')}` } }).then(r => r.json()),
+    };
+
+    // Icons (using lucide)
+    function Icon({ name, className = "icon" }) {
+      useEffect(() => {
+        lucide.createIcons();
+      }, []);
+      return <i data-lucide={name} className={className}></i>;
+    }
+
+    // Login Page
+    function LoginPage({ onSwitch }) {
+      const { login } = useAuth();
+      const [email, setEmail] = useState('demo@petrecord.com');
+      const [password, setPassword] = useState('demo123');
+      const [error, setError] = useState('');
+      const [loading, setLoading] = useState(false);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError('');
+        try {
+          await login(email, password);
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+            <div className="text-center mb-8">
+              <div className="text-5xl mb-3">🐾</div>
+              <h1 className="text-2xl font-bold text-gray-900">Welcome to PetRecord</h1>
+              <p className="text-gray-600">Your pet's health records, always accessible</p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {error && <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>}
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" required />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" required />
+              </div>
+
+              <button type="submit" disabled={loading} className="w-full py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50">
+                {loading ? 'Signing in...' : 'Sign In'}
+              </button>
+            </form>
+
+            <div className="mt-6 text-center">
+              <p className="text-gray-600">
+                Don't have an account? <button onClick={onSwitch} className="text-primary-600 font-medium hover:underline">Sign up</button>
+              </p>
+            </div>
+
+            <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+              <p className="text-sm text-gray-600 font-medium mb-1">Demo Account:</p>
+              <p className="text-sm text-gray-500">demo@petrecord.com / demo123</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Register Page
+    function RegisterPage({ onSwitch }) {
+      const { register } = useAuth();
+      const [form, setForm] = useState({ email: '', password: '', firstName: '', lastName: '' });
+      const [error, setError] = useState('');
+      const [loading, setLoading] = useState(false);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError('');
+        try {
+          await register(form.email, form.password, form.firstName, form.lastName);
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+            <div className="text-center mb-8">
+              <div className="text-5xl mb-3">🐾</div>
+              <h1 className="text-2xl font-bold text-gray-900">Create Account</h1>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {error && <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>}
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                  <input type="text" value={form.firstName} onChange={e => setForm({...form, firstName: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                  <input type="text" value={form.lastName} onChange={e => setForm({...form, lastName: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" required />
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" required />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <input type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" required minLength={6} />
+              </div>
+
+              <button type="submit" disabled={loading} className="w-full py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50">
+                {loading ? 'Creating account...' : 'Create Account'}
+              </button>
+            </form>
+
+            <div className="mt-6 text-center">
+              <p className="text-gray-600">
+                Already have an account? <button onClick={onSwitch} className="text-primary-600 font-medium hover:underline">Sign in</button>
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Dashboard
+    function Dashboard({ onSelectPet }) {
+      const { user, logout } = useAuth();
+      const [pets, setPets] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [showAddPet, setShowAddPet] = useState(false);
+
+      useEffect(() => {
+        api.get('/api/pets').then(setPets).finally(() => setLoading(false));
+      }, []);
+
+      const handleAddPet = async (petData) => {
+        const newPet = await api.post('/api/pets', petData);
+        setPets([newPet, ...pets]);
+        setShowAddPet(false);
+      };
+
+      if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-lg">Loading...</div></div>;
+
+      return (
+        <div className="min-h-screen bg-gray-50">
+          <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
+            <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">🐾</span>
+                <span className="font-bold text-xl text-gray-900">PetRecord</span>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-600 hidden sm:block">{user?.email}</span>
+                <button onClick={logout} className="text-sm text-gray-600 hover:text-gray-900">Sign out</button>
+              </div>
+            </div>
+          </header>
+
+          <main className="max-w-5xl mx-auto px-4 py-6">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Welcome back, {user?.firstName}!</h1>
+                <p className="text-gray-600">Here's an overview of your pets' health</p>
+              </div>
+              <button onClick={() => setShowAddPet(true)} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2">
+                <span>+</span> Add Pet
+              </button>
+            </div>
+
+            {pets.length === 0 ? (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+                <div className="text-6xl mb-4">🐾</div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">No pets yet</h3>
+                <p className="text-gray-600 mb-4">Add your first pet to start tracking their health records</p>
+                <button onClick={() => setShowAddPet(true)} className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+                  Add Your First Pet
+                </button>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-4">
+                {pets.map(pet => (
+                  <div key={pet.id} onClick={() => onSelectPet(pet)} className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer">
+                    <div className="flex items-start gap-4">
+                      <div className="text-5xl">{pet.species === 'DOG' ? '🐕' : pet.species === 'CAT' ? '🐈' : '🐾'}</div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-semibold text-gray-900">{pet.name}</h3>
+                        <p className="text-gray-600 text-sm">{pet.breed} • {pet.sex?.replace('_', ' ')}</p>
+                        <p className="text-gray-500 text-sm">{pet.weightKg} kg</p>
+                      </div>
+                      <span className="text-gray-400">→</span>
+                    </div>
+                    
+                    {(pet.allergies?.length > 0 || pet.medications?.length > 0) && (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {pet.allergies?.length > 0 && (
+                          <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs">
+                            ⚠️ {pet.allergies.length} Allergies
+                          </span>
+                        )}
+                        {pet.medications?.length > 0 && (
+                          <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                            💊 {pet.medications.length} Medications
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </main>
+
+          {showAddPet && <AddPetModal onClose={() => setShowAddPet(false)} onSave={handleAddPet} />}
+        </div>
+      );
+    }
+
+    // Add Pet Modal
+    function AddPetModal({ onClose, onSave }) {
+      const [form, setForm] = useState({ name: '', species: 'DOG', breed: '', sex: 'MALE', dateOfBirth: '', weightKg: '' });
+      const [loading, setLoading] = useState(false);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        await onSave({ ...form, weightKg: form.weightKg ? parseFloat(form.weightKg) : null });
+        setLoading(false);
+      };
+
+      return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <h2 className="text-xl font-bold mb-4">Add New Pet</h2>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                <input type="text" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Species *</label>
+                  <select value={form.species} onChange={e => setForm({...form, species: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                    <option value="DOG">Dog</option>
+                    <option value="CAT">Cat</option>
+                    <option value="BIRD">Bird</option>
+                    <option value="OTHER">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Sex *</label>
+                  <select value={form.sex} onChange={e => setForm({...form, sex: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                    <option value="MALE">Male</option>
+                    <option value="FEMALE">Female</option>
+                    <option value="MALE_NEUTERED">Male (Neutered)</option>
+                    <option value="FEMALE_SPAYED">Female (Spayed)</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Breed</label>
+                <input type="text" value={form.breed} onChange={e => setForm({...form, breed: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+                  <input type="date" value={form.dateOfBirth} onChange={e => setForm({...form, dateOfBirth: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Weight (kg)</label>
+                  <input type="number" step="0.1" value={form.weightKg} onChange={e => setForm({...form, weightKg: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                <button type="submit" disabled={loading} className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">
+                  {loading ? 'Adding...' : 'Add Pet'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // Pet Profile
+    function PetProfile({ pet: initialPet, onBack }) {
+      const [pet, setPet] = useState(initialPet);
+      const [activeTab, setActiveTab] = useState('overview');
+      const [timeline, setTimeline] = useState([]);
+      const [showShare, setShowShare] = useState(false);
+
+      useEffect(() => {
+        api.get(`/api/pets/${pet.id}`).then(setPet);
+        api.get(`/api/pets/${pet.id}/timeline`).then(setTimeline);
+      }, [pet.id]);
+
+      const age = pet.dateOfBirth ? Math.floor((new Date() - new Date(pet.dateOfBirth)) / (365.25 * 24 * 60 * 60 * 1000)) : null;
+
+      return (
+        <div className="min-h-screen bg-gray-50">
+          <header className="bg-white border-b border-gray-200">
+            <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-4">
+              <button onClick={onBack} className="text-gray-600 hover:text-gray-900">← Back</button>
+              <span className="text-2xl">{pet.species === 'DOG' ? '🐕' : pet.species === 'CAT' ? '🐈' : '🐾'}</span>
+              <span className="font-bold text-xl">{pet.name}</span>
+            </div>
+          </header>
+
+          <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+            {/* Pet Header Card */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-6">
+                  <div className="text-7xl">{pet.species === 'DOG' ? '🐕' : pet.species === 'CAT' ? '🐈' : '🐾'}</div>
+                  <div>
+                    <h1 className="text-2xl font-bold text-gray-900">{pet.name}</h1>
+                    <p className="text-gray-600">{pet.breed}</p>
+                    <div className="flex flex-wrap gap-4 mt-2 text-sm text-gray-600">
+                      <span>{pet.sex?.replace('_', ' ')}</span>
+                      {age !== null && <span>{age} years old</span>}
+                      {pet.weightKg && <span>{pet.weightKg} kg</span>}
+                      {pet.microchipId && <span>🏷️ {pet.microchipId}</span>}
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => setShowShare(true)} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+                  Share Records
+                </button>
+              </div>
+            </div>
+
+            {/* Allergies Alert */}
+            {pet.allergies?.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 text-red-800 font-semibold mb-2">
+                  ⚠️ Allergies & Sensitivities
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {pet.allergies.map((a, i) => (
+                    <span key={i} className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm">
+                      {a.allergen} ({a.severity})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Tabs */}
+            <div className="flex gap-2 border-b border-gray-200">
+              {['overview', 'timeline', 'medications', 'vaccinations'].map(tab => (
+                <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 font-medium capitalize ${activeTab === tab ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-600 hover:text-gray-900'}`}>
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            {/* Overview Tab */}
+            {activeTab === 'overview' && (
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                  <h3 className="font-semibold text-gray-900 mb-4">💜 Chronic Conditions</h3>
+                  {!pet.conditions?.length ? (
+                    <p className="text-gray-500 text-sm">No chronic conditions recorded</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {pet.conditions.map((c, i) => (
+                        <div key={i} className="flex items-center justify-between">
+                          <span className="font-medium">{c.condition}</span>
+                          <span className={`px-2 py-0.5 rounded text-xs ${c.status === 'active' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
+                            {c.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                  <h3 className="font-semibold text-gray-900 mb-4">💊 Active Medications</h3>
+                  {!pet.medications?.filter(m => m.status === 'ACTIVE').length ? (
+                    <p className="text-gray-500 text-sm">No active medications</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {pet.medications.filter(m => m.status === 'ACTIVE').map((m, i) => (
+                        <div key={i} className="flex items-center justify-between text-sm">
+                          <span className="font-medium">{m.drug_name}</span>
+                          <span className="text-gray-500">{m.frequency}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                  <h3 className="font-semibold text-gray-900 mb-4">💉 Vaccinations</h3>
+                  {!pet.vaccinations?.length ? (
+                    <p className="text-gray-500 text-sm">No vaccinations recorded</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {pet.vaccinations.slice(0, 5).map((v, i) => {
+                        const expired = v.valid_until && new Date(v.valid_until) < new Date();
+                        return (
+                          <div key={i} className="flex items-center justify-between text-sm">
+                            <span className="font-medium">{v.vaccine_name}</span>
+                            <span className={`px-2 py-0.5 rounded text-xs ${expired ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                              {expired ? 'Expired' : 'Current'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                  <h3 className="font-semibold text-gray-900 mb-4">⚖️ Weight History</h3>
+                  {!pet.weightHistory?.length ? (
+                    <p className="text-gray-500 text-sm">No weight records</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {pet.weightHistory.slice(0, 5).map((w, i) => (
+                        <div key={i} className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600">{w.date}</span>
+                          <span className="font-medium">{w.weight_kg} kg</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Timeline Tab */}
+            {activeTab === 'timeline' && (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                {timeline.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">No records yet</p>
+                ) : (
+                  <div className="space-y-6">
+                    {timeline.map((event, i) => (
+                      <div key={i} className="flex gap-4 relative">
+                        {i < timeline.length - 1 && <div className="absolute left-5 top-12 bottom-0 w-0.5 bg-gray-200" />}
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          event.type === 'record' ? 'bg-indigo-100 text-indigo-600' :
+                          event.type === 'vaccination' ? 'bg-green-100 text-green-600' :
+                          'bg-teal-100 text-teal-600'
+                        }`}>
+                          {event.type === 'record' ? '📋' : event.type === 'vaccination' ? '💉' : '🧪'}
+                        </div>
+                        <div className="flex-1 pb-6">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-semibold text-gray-900">{event.subtype}</span>
+                            <span className="text-sm text-gray-500">{event.date}</span>
+                          </div>
+                          {event.data.summary && <p className="text-gray-600 text-sm">{event.data.summary}</p>}
+                          {event.data.facility_name && <p className="text-gray-500 text-xs mt-1">{event.data.facility_name}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Medications Tab */}
+            {activeTab === 'medications' && (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+                <div className="p-4 border-b border-gray-200">
+                  <h3 className="font-semibold">Medications</h3>
+                </div>
+                {!pet.medications?.length ? (
+                  <div className="p-8 text-center text-gray-500">No medications recorded</div>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {pet.medications.map((m, i) => (
+                      <div key={i} className="p-4 flex items-center justify-between">
+                        <div>
+                          <div className="font-medium">{m.drug_name}</div>
+                          <div className="text-sm text-gray-600">{m.dose} • {m.frequency}</div>
+                          {m.indication && <div className="text-xs text-gray-500">For: {m.indication}</div>}
+                        </div>
+                        <span className={`px-2 py-1 rounded text-xs ${m.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                          {m.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Vaccinations Tab */}
+            {activeTab === 'vaccinations' && (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+                <div className="p-4 border-b border-gray-200">
+                  <h3 className="font-semibold">Vaccinations</h3>
+                </div>
+                {!pet.vaccinations?.length ? (
+                  <div className="p-8 text-center text-gray-500">No vaccinations recorded</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 text-left text-sm text-gray-600">
+                        <tr>
+                          <th className="p-4">Vaccine</th>
+                          <th className="p-4">Date Given</th>
+                          <th className="p-4">Valid Until</th>
+                          <th className="p-4">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {pet.vaccinations.map((v, i) => {
+                          const expired = v.valid_until && new Date(v.valid_until) < new Date();
+                          return (
+                            <tr key={i}>
+                              <td className="p-4 font-medium">{v.vaccine_name}</td>
+                              <td className="p-4 text-gray-600">{v.administration_date}</td>
+                              <td className="p-4 text-gray-600">{v.valid_until || '-'}</td>
+                              <td className="p-4">
+                                <span className={`px-2 py-1 rounded text-xs ${expired ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                  {expired ? 'Expired' : 'Current'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </main>
+
+          {showShare && <ShareModal pet={pet} onClose={() => setShowShare(false)} />}
+        </div>
+      );
+    }
+
+    // Share Modal
+    function ShareModal({ pet, onClose }) {
+      const [shareData, setShareData] = useState(null);
+      const [loading, setLoading] = useState(false);
+      const [copied, setCopied] = useState(false);
+
+      const createShare = async () => {
+        setLoading(true);
+        const data = await api.post('/api/share/quick-share', { petId: pet.id, duration: '7d', permissionLevel: 'FULL_ACCESS' });
+        setShareData(data);
+        setLoading(false);
+      };
+
+      const copyLink = () => {
+        navigator.clipboard.writeText(shareData.shareUrl);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      };
+
+      return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">Share {pet.name}'s Records</h2>
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+
+            {!shareData ? (
+              <div className="text-center py-6">
+                <p className="text-gray-600 mb-4">Create a secure link to share {pet.name}'s health records with your vet or caregiver.</p>
+                <button onClick={createShare} disabled={loading} className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">
+                  {loading ? 'Creating...' : 'Generate Share Link'}
+                </button>
+              </div>
+            ) : (
+              <div>
+                <div className="bg-gray-50 rounded-lg p-4 text-center mb-4">
+                  <img src={shareData.qrCode} alt="QR Code" className="w-48 h-48 mx-auto mb-3" />
+                  <p className="text-sm text-gray-600">Scan to view records</p>
+                </div>
+                <div className="flex gap-2 mb-4">
+                  <input type="text" value={shareData.shareUrl} readOnly className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm" />
+                  <button onClick={copyLink} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+                    {copied ? '✓' : 'Copy'}
+                  </button>
+                </div>
+                <p className="text-sm text-gray-500 text-center">Link expires in 7 days</p>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Shared View (public)
+    function SharedView({ token }) {
+      const [data, setData] = useState(null);
+      const [error, setError] = useState('');
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        fetch(`/api/share/access/${token}`, { method: 'POST' })
+          .then(r => r.ok ? r.json() : r.json().then(d => Promise.reject(d.error)))
+          .then(setData)
+          .catch(e => setError(e))
+          .finally(() => setLoading(false));
+      }, [token]);
+
+      if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+      if (error) return <div className="min-h-screen flex items-center justify-center text-red-600">{error}</div>;
+
+      const pet = data.pet;
+
+      return (
+        <div className="min-h-screen bg-gray-50">
+          <div className="bg-primary-800 text-white py-6">
+            <div className="max-w-3xl mx-auto px-4">
+              <div className="flex items-center gap-2 text-primary-200 text-sm mb-4">
+                🔒 Secure health record shared via PetRecord
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="text-5xl">{pet.species === 'DOG' ? '🐕' : pet.species === 'CAT' ? '🐈' : '🐾'}</div>
+                <div>
+                  <h1 className="text-2xl font-bold">{pet.name}</h1>
+                  <p className="text-primary-200">{pet.breed} • {pet.sex} • {pet.weightKg} kg</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
+            {data.allergies?.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                <h3 className="font-semibold text-red-800 mb-2">⚠️ Allergies</h3>
+                <div className="flex flex-wrap gap-2">
+                  {data.allergies.map((a, i) => (
+                    <span key={i} className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm">{a.allergen}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {data.conditions?.length > 0 && (
+              <div className="bg-white rounded-xl shadow-sm border p-4">
+                <h3 className="font-semibold mb-3">Conditions</h3>
+                {data.conditions.map((c, i) => (
+                  <div key={i} className="flex justify-between py-2 border-b last:border-0">
+                    <span>{c.condition}</span>
+                    <span className="text-sm text-gray-500">{c.status}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {data.activeMedications?.length > 0 && (
+              <div className="bg-white rounded-xl shadow-sm border p-4">
+                <h3 className="font-semibold mb-3">Current Medications</h3>
+                {data.activeMedications.map((m, i) => (
+                  <div key={i} className="py-2 border-b last:border-0">
+                    <div className="font-medium">{m.drug_name}</div>
+                    <div className="text-sm text-gray-600">{m.dose} • {m.frequency}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {data.vaccinations?.length > 0 && (
+              <div className="bg-white rounded-xl shadow-sm border p-4">
+                <h3 className="font-semibold mb-3">Vaccinations</h3>
+                {data.vaccinations.map((v, i) => (
+                  <div key={i} className="flex justify-between py-2 border-b last:border-0">
+                    <span>{v.vaccine_name}</span>
+                    <span className="text-sm text-gray-500">{v.administration_date}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <p className="text-center text-sm text-gray-500 pt-4">
+              Health records provided by <a href="/" className="text-primary-600">PetRecord</a>
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    // Main App
+    function App() {
+      const { isAuthenticated, loading } = useAuth();
+      const [view, setView] = useState('login');
+      const [selectedPet, setSelectedPet] = useState(null);
+
+      // Check for share URL
+      const path = window.location.pathname;
+      if (path.startsWith('/share/')) {
+        const token = path.replace('/share/', '');
+        return <SharedView token={token} />;
+      }
+
+      if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+
+      if (!isAuthenticated) {
+        return view === 'login' 
+          ? <LoginPage onSwitch={() => setView('register')} />
+          : <RegisterPage onSwitch={() => setView('login')} />;
+      }
+
+      if (selectedPet) {
+        return <PetProfile pet={selectedPet} onBack={() => setSelectedPet(null)} />;
+      }
+
+      return <Dashboard onSelectPet={setSelectedPet} />;
+    }
+
+    // Render
+    ReactDOM.createRoot(document.getElementById('root')).render(
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    );
+  </script>
+</body>
+</html>
