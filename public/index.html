@@ -1,39 +1,81 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PetRecord - Pet Health Records</title>
+  <title>PetRecord - Veterinary Health Records</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script>
     tailwind.config = {
       theme: {
         extend: {
           colors: {
-            primary: { 50:'#eff6ff',100:'#dbeafe',200:'#bfdbfe',300:'#93c5fd',400:'#60a5fa',500:'#3b82f6',600:'#2563eb',700:'#1d4ed8',800:'#1e40af',900:'#1e3a8a' }
-          }
+            primary: { 50:'#f0fdfa',100:'#ccfbf1',200:'#99f6e4',300:'#5eead4',400:'#2dd4bf',500:'#14b8a6',600:'#0d9488',700:'#0f766e',800:'#115e59',900:'#134e4a' },
+            accent: { 50:'#ecfdf5',100:'#d1fae5',200:'#a7f3d0',300:'#6ee7b7',400:'#34d399',500:'#10b981',600:'#059669',700:'#047857',800:'#065f46',900:'#064e3b' },
+            slate: { 50:'#f8fafc',100:'#f1f5f9',200:'#e2e8f0',300:'#cbd5e1',400:'#94a3b8',500:'#64748b',600:'#475569',700:'#334155',800:'#1e293b',900:'#0f172a' }
+          },
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] }
         }
       }
     }
   </script>
   <style>
-    .icon { width: 20px; height: 20px; }
-    .icon-sm { width: 16px; height: 16px; }
-    .icon-lg { width: 24px; height: 24px; }
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .upload-zone { border: 2px dashed #cbd5e1; transition: all 0.2s; }
+    .upload-zone:hover, .upload-zone.drag-over { border-color: #0d9488; background: #f0fdfa; }
+    .spinner { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .gradient-bg { background: linear-gradient(135deg, #115e59 0%, #0f766e 50%, #0d9488 100%); }
   </style>
 </head>
-<body>
+<body class="bg-slate-50">
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useEffect, createContext, useContext } = React;
+    const { useState, useEffect, createContext, useContext, useCallback } = React;
+
+    // SVG Icon Components
+    const Icons = {
+      Logo: () => (
+        <svg viewBox="0 0 40 40" className="w-10 h-10">
+          <rect width="40" height="40" rx="8" fill="#0d9488"/>
+          <path d="M12 16c0-1.1.9-2 2-2h2c1.1 0 2 .9 2 2v2c0 1.1-.9 2-2 2h-2c-1.1 0-2-.9-2-2v-2zM22 16c0-1.1.9-2 2-2h2c1.1 0 2 .9 2 2v2c0 1.1-.9 2-2 2h-2c-1.1 0-2-.9-2-2v-2zM17 24c0-1.1.9-2 2-2h2c1.1 0 2 .9 2 2v2c0 1.1-.9 2-2 2h-2c-1.1 0-2-.9-2-2v-2z" fill="white"/>
+        </svg>
+      ),
+      Plus: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" strokeLinecap="round"/></svg>,
+      ArrowLeft: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+      ArrowRight: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+      Upload: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+      Share: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>,
+      Alert: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+      Pill: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.5 20.5L3.5 13.5a4.95 4.95 0 117-7l7 7a4.95 4.95 0 11-7 7zM8.5 8.5l7 7" strokeLinecap="round"/></svg>,
+      Syringe: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 2l4 4M15 5l6 6M7 11l-4 4 6 6 4-4M11 11l6 6M9 13l4 4" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+      Activity: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+      FileText: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" strokeLinecap="round"/></svg>,
+      Heart: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>,
+      Scale: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 16l3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1zM2 16l3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1zM7 21h10M12 3v18M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+      Calendar: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18" strokeLinecap="round"/></svg>,
+      Check: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+      X: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" strokeLinecap="round"/></svg>,
+      Clock: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round"/></svg>,
+      Shield: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+      Chip: ({className="w-4 h-4"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>,
+      Dog: ({className="w-8 h-8"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10 5.172C10 3.782 8.423 2.679 6.5 3c-2.823.47-4.113 6.006-4 7 .08.703 1.725 1.722 3.656 1 1.261-.472 1.96-1.45 2.344-2.5M14 5.172C14 3.782 15.577 2.679 17.5 3c2.823.47 4.113 6.006 4 7-.08.703-1.725 1.722-3.656 1-1.261-.472-1.855-1.45-2.344-2.5" strokeLinecap="round"/><ellipse cx="12" cy="14" rx="6" ry="5"/><path d="M9 14.5v1M15 14.5v1M12 16.5v1.5" strokeLinecap="round"/></svg>,
+      Cat: ({className="w-8 h-8"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 22c4.97 0 9-3.134 9-7s-4.03-7-9-7-9 3.134-9 7 4.03 7 9 7z"/><path d="M3 8V5.5C3 4.12 4.12 3 5.5 3S8 4.12 8 5.5V8M21 8V5.5C21 4.12 19.88 3 18.5 3S16 4.12 16 5.5V8" strokeLinecap="round"/><circle cx="9" cy="14" r="1" fill="currentColor"/><circle cx="15" cy="14" r="1" fill="currentColor"/><path d="M12 16v1.5M10 18.5h4" strokeLinecap="round"/></svg>,
+      Pet: ({className="w-8 h-8"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8.35 3c-1.8 0-3.1 1.56-2.9 3.35.1.87.4 1.71.8 2.48M15.65 3c1.8 0 3.1 1.56 2.9 3.35-.1.87-.4 1.71-.8 2.48"/><ellipse cx="12" cy="14" rx="8" ry="7"/><path d="M9 13v2M15 13v2M10 18h4" strokeLinecap="round"/></svg>,
+    };
+
+    const SpeciesIcon = ({ species, size = "md" }) => {
+      const sizeClasses = { sm: "w-6 h-6", md: "w-8 h-8", lg: "w-12 h-12" };
+      const Icon = species === 'DOG' ? Icons.Dog : species === 'CAT' ? Icons.Cat : Icons.Pet;
+      return <Icon className={`${sizeClasses[size]} text-primary-700`} />;
+    };
 
     // Auth Context
     const AuthContext = createContext(null);
-    
     function AuthProvider({ children }) {
       const [user, setUser] = useState(null);
       const [loading, setLoading] = useState(true);
@@ -46,17 +88,11 @@
             .then(setUser)
             .catch(() => { localStorage.removeItem('petrecord_token'); setToken(null); })
             .finally(() => setLoading(false));
-        } else {
-          setLoading(false);
-        }
+        } else { setLoading(false); }
       }, [token]);
 
       const login = async (email, password) => {
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password })
-        });
+        const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
         localStorage.setItem('petrecord_token', data.token);
@@ -65,11 +101,7 @@
       };
 
       const register = async (email, password, firstName, lastName) => {
-        const res = await fetch('/api/auth/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password, firstName, lastName })
-        });
+        const res = await fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password, firstName, lastName }) });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
         localStorage.setItem('petrecord_token', data.token);
@@ -77,35 +109,17 @@
         setUser(data.user);
       };
 
-      const logout = () => {
-        localStorage.removeItem('petrecord_token');
-        setToken(null);
-        setUser(null);
-      };
+      const logout = () => { localStorage.removeItem('petrecord_token'); setToken(null); setUser(null); };
 
-      return (
-        <AuthContext.Provider value={{ user, token, loading, login, register, logout, isAuthenticated: !!user }}>
-          {children}
-        </AuthContext.Provider>
-      );
+      return <AuthContext.Provider value={{ user, token, loading, login, register, logout, isAuthenticated: !!user }}>{children}</AuthContext.Provider>;
     }
-
     const useAuth = () => useContext(AuthContext);
 
-    // API helper
     const api = {
       get: (url) => fetch(url, { headers: { Authorization: `Bearer ${localStorage.getItem('petrecord_token')}` } }).then(r => r.json()),
       post: (url, data) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('petrecord_token')}` }, body: JSON.stringify(data) }).then(r => r.json()),
-      delete: (url) => fetch(url, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('petrecord_token')}` } }).then(r => r.json()),
+      upload: (url, formData) => fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('petrecord_token')}` }, body: formData }).then(r => r.json()),
     };
-
-    // Icons (using lucide)
-    function Icon({ name, className = "icon" }) {
-      useEffect(() => {
-        lucide.createIcons();
-      }, []);
-      return <i data-lucide={name} className={className}></i>;
-    }
 
     // Login Page
     function LoginPage({ onSwitch }) {
@@ -119,51 +133,37 @@
         e.preventDefault();
         setLoading(true);
         setError('');
-        try {
-          await login(email, password);
-        } catch (err) {
-          setError(err.message);
-        } finally {
-          setLoading(false);
-        }
+        try { await login(email, password); } catch (err) { setError(err.message); } finally { setLoading(false); }
       };
 
       return (
-        <div className="min-h-screen bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+        <div className="min-h-screen gradient-bg flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
             <div className="text-center mb-8">
-              <div className="text-5xl mb-3">🐾</div>
-              <h1 className="text-2xl font-bold text-gray-900">Welcome to PetRecord</h1>
-              <p className="text-gray-600">Your pet's health records, always accessible</p>
+              <div className="flex justify-center mb-4"><Icons.Logo /></div>
+              <h1 className="text-2xl font-bold text-slate-900">Welcome to PetRecord</h1>
+              <p className="text-slate-500 mt-1">Comprehensive veterinary health management</p>
             </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {error && <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>}
-              
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {error && <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{error}</div>}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" required />
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Email Address</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" required />
               </div>
-              
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" required />
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" required />
               </div>
-
-              <button type="submit" disabled={loading} className="w-full py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50">
+              <button type="submit" disabled={loading} className="w-full py-3 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700 disabled:opacity-50 transition-colors">
                 {loading ? 'Signing in...' : 'Sign In'}
               </button>
             </form>
-
             <div className="mt-6 text-center">
-              <p className="text-gray-600">
-                Don't have an account? <button onClick={onSwitch} className="text-primary-600 font-medium hover:underline">Sign up</button>
-              </p>
+              <p className="text-slate-600">Don't have an account? <button onClick={onSwitch} className="text-primary-600 font-semibold hover:text-primary-700">Create Account</button></p>
             </div>
-
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-              <p className="text-sm text-gray-600 font-medium mb-1">Demo Account:</p>
-              <p className="text-sm text-gray-500">demo@petrecord.com / demo123</p>
+            <div className="mt-6 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+              <p className="text-sm text-slate-700 font-medium mb-1">Demo Credentials</p>
+              <p className="text-sm text-slate-500 font-mono">demo@petrecord.com / demo123</p>
             </div>
           </div>
         </div>
@@ -181,142 +181,119 @@
         e.preventDefault();
         setLoading(true);
         setError('');
-        try {
-          await register(form.email, form.password, form.firstName, form.lastName);
-        } catch (err) {
-          setError(err.message);
-        } finally {
-          setLoading(false);
-        }
+        try { await register(form.email, form.password, form.firstName, form.lastName); } catch (err) { setError(err.message); } finally { setLoading(false); }
       };
 
       return (
-        <div className="min-h-screen bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+        <div className="min-h-screen gradient-bg flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
             <div className="text-center mb-8">
-              <div className="text-5xl mb-3">🐾</div>
-              <h1 className="text-2xl font-bold text-gray-900">Create Account</h1>
+              <div className="flex justify-center mb-4"><Icons.Logo /></div>
+              <h1 className="text-2xl font-bold text-slate-900">Create Account</h1>
+              <p className="text-slate-500 mt-1">Start managing health records</p>
             </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {error && <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>}
-              
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {error && <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{error}</div>}
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-                  <input type="text" value={form.firstName} onChange={e => setForm({...form, firstName: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" required />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                  <input type="text" value={form.lastName} onChange={e => setForm({...form, lastName: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" required />
-                </div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1.5">First Name</label><input type="text" value={form.firstName} onChange={e => setForm({...form, firstName: e.target.value})} className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500" required /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1.5">Last Name</label><input type="text" value={form.lastName} onChange={e => setForm({...form, lastName: e.target.value})} className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500" required /></div>
               </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" required />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                <input type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" required minLength={6} />
-              </div>
-
-              <button type="submit" disabled={loading} className="w-full py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50">
-                {loading ? 'Creating account...' : 'Create Account'}
-              </button>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1.5">Email Address</label><input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500" required /></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1.5">Password</label><input type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500" required minLength={6} /></div>
+              <button type="submit" disabled={loading} className="w-full py-3 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700 disabled:opacity-50 transition-colors">{loading ? 'Creating account...' : 'Create Account'}</button>
             </form>
-
-            <div className="mt-6 text-center">
-              <p className="text-gray-600">
-                Already have an account? <button onClick={onSwitch} className="text-primary-600 font-medium hover:underline">Sign in</button>
-              </p>
-            </div>
+            <div className="mt-6 text-center"><p className="text-slate-600">Already have an account? <button onClick={onSwitch} className="text-primary-600 font-semibold hover:text-primary-700">Sign In</button></p></div>
           </div>
         </div>
       );
     }
 
+    // Header
+    function Header({ onBack }) {
+      const { user, logout } = useAuth();
+      return (
+        <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
+          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              {onBack && <button onClick={onBack} className="flex items-center gap-1.5 text-slate-600 hover:text-slate-900 font-medium text-sm"><Icons.ArrowLeft className="w-4 h-4" /> Back</button>}
+              <div className="flex items-center gap-2.5">
+                <Icons.Logo />
+                <span className="font-bold text-lg text-slate-900">PetRecord</span>
+              </div>
+            </div>
+            {user && <div className="flex items-center gap-4"><span className="text-sm text-slate-500 hidden sm:block">{user.email}</span><button onClick={logout} className="text-sm text-slate-600 hover:text-slate-900 font-medium">Sign Out</button></div>}
+          </div>
+        </header>
+      );
+    }
+
     // Dashboard
     function Dashboard({ onSelectPet }) {
-      const { user, logout } = useAuth();
+      const { user } = useAuth();
       const [pets, setPets] = useState([]);
       const [loading, setLoading] = useState(true);
       const [showAddPet, setShowAddPet] = useState(false);
+      const [aiEnabled, setAiEnabled] = useState(false);
 
       useEffect(() => {
         api.get('/api/pets').then(setPets).finally(() => setLoading(false));
+        api.get('/api/ai/status').then(data => setAiEnabled(data.enabled));
       }, []);
 
-      const handleAddPet = async (petData) => {
-        const newPet = await api.post('/api/pets', petData);
-        setPets([newPet, ...pets]);
-        setShowAddPet(false);
-      };
+      const handleAddPet = async (petData) => { const newPet = await api.post('/api/pets', petData); setPets([newPet, ...pets]); setShowAddPet(false); };
 
-      if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-lg">Loading...</div></div>;
+      if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-slate-500">Loading...</div></div>;
 
       return (
-        <div className="min-h-screen bg-gray-50">
-          <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-            <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-2xl">🐾</span>
-                <span className="font-bold text-xl text-gray-900">PetRecord</span>
-              </div>
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-gray-600 hidden sm:block">{user?.email}</span>
-                <button onClick={logout} className="text-sm text-gray-600 hover:text-gray-900">Sign out</button>
-              </div>
-            </div>
-          </header>
-
-          <main className="max-w-5xl mx-auto px-4 py-6">
-            <div className="flex items-center justify-between mb-6">
+        <div className="min-h-screen bg-slate-50">
+          <Header />
+          <main className="max-w-6xl mx-auto px-4 py-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Welcome back, {user?.firstName}!</h1>
-                <p className="text-gray-600">Here's an overview of your pets' health</p>
+                <h1 className="text-2xl font-bold text-slate-900">Welcome back, {user?.firstName}</h1>
+                <p className="text-slate-500">Manage your patients' health records</p>
               </div>
-              <button onClick={() => setShowAddPet(true)} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2">
-                <span>+</span> Add Pet
-              </button>
+              <button onClick={() => setShowAddPet(true)} className="px-5 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2 font-medium transition-colors"><Icons.Plus /> Add Patient</button>
             </div>
+
+            {!aiEnabled && (
+              <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
+                <Icons.Alert className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                <div><p className="text-amber-800 font-medium">AI Document Extraction Disabled</p><p className="text-amber-700 text-sm">Add ANTHROPIC_API_KEY to Railway variables to enable automatic data extraction.</p></div>
+              </div>
+            )}
+
+            {aiEnabled && (
+              <div className="mb-6 p-4 bg-primary-50 border border-primary-200 rounded-xl flex items-start gap-3">
+                <Icons.Check className="w-5 h-5 text-primary-600 mt-0.5 flex-shrink-0" />
+                <div><p className="text-primary-800 font-medium">AI-Powered Document Processing Active</p><p className="text-primary-700 text-sm">Upload vet records to automatically extract vaccinations, medications, lab results, and more.</p></div>
+              </div>
+            )}
 
             {pets.length === 0 ? (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
-                <div className="text-6xl mb-4">🐾</div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">No pets yet</h3>
-                <p className="text-gray-600 mb-4">Add your first pet to start tracking their health records</p>
-                <button onClick={() => setShowAddPet(true)} className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
-                  Add Your First Pet
-                </button>
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
+                <div className="w-16 h-16 bg-primary-50 rounded-full flex items-center justify-center mx-auto mb-4"><SpeciesIcon species="OTHER" size="lg" /></div>
+                <h3 className="text-xl font-semibold text-slate-900 mb-2">No patients yet</h3>
+                <p className="text-slate-500 mb-6">Add your first patient to start tracking their health records</p>
+                <button onClick={() => setShowAddPet(true)} className="px-6 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium transition-colors">Add Your First Patient</button>
               </div>
             ) : (
-              <div className="grid md:grid-cols-2 gap-4">
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {pets.map(pet => (
-                  <div key={pet.id} onClick={() => onSelectPet(pet)} className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer">
+                  <div key={pet.id} onClick={() => onSelectPet(pet)} className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 hover:shadow-md hover:border-primary-300 transition-all cursor-pointer group">
                     <div className="flex items-start gap-4">
-                      <div className="text-5xl">{pet.species === 'DOG' ? '🐕' : pet.species === 'CAT' ? '🐈' : '🐾'}</div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-semibold text-gray-900">{pet.name}</h3>
-                        <p className="text-gray-600 text-sm">{pet.breed} • {pet.sex?.replace('_', ' ')}</p>
-                        <p className="text-gray-500 text-sm">{pet.weightKg} kg</p>
+                      <div className="p-2.5 bg-primary-50 rounded-lg group-hover:bg-primary-100 transition-colors"><SpeciesIcon species={pet.species} size="md" /></div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-lg font-semibold text-slate-900 truncate">{pet.name}</h3>
+                        <p className="text-slate-600 text-sm truncate">{pet.breed}</p>
+                        <p className="text-slate-400 text-sm">{pet.sex?.replace(/_/g, ' ')}{pet.weightKg ? ` · ${pet.weightKg} kg` : ''}</p>
                       </div>
-                      <span className="text-gray-400">→</span>
+                      <Icons.ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-primary-600 transition-colors" />
                     </div>
-                    
                     {(pet.allergies?.length > 0 || pet.medications?.length > 0) && (
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {pet.allergies?.length > 0 && (
-                          <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs">
-                            ⚠️ {pet.allergies.length} Allergies
-                          </span>
-                        )}
-                        {pet.medications?.length > 0 && (
-                          <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
-                            💊 {pet.medications.length} Medications
-                          </span>
-                        )}
+                      <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap gap-2">
+                        {pet.allergies?.length > 0 && <span className="px-2.5 py-1 bg-red-50 text-red-700 border border-red-200 rounded-full text-xs font-medium">{pet.allergies.length} Allergies</span>}
+                        {pet.medications?.length > 0 && <span className="px-2.5 py-1 bg-primary-50 text-primary-700 border border-primary-200 rounded-full text-xs font-medium">{pet.medications.length} Active Meds</span>}
                       </div>
                     )}
                   </div>
@@ -324,7 +301,6 @@
               </div>
             )}
           </main>
-
           {showAddPet && <AddPetModal onClose={() => setShowAddPet(false)} onSave={handleAddPet} />}
         </div>
       );
@@ -334,64 +310,91 @@
     function AddPetModal({ onClose, onSave }) {
       const [form, setForm] = useState({ name: '', species: 'DOG', breed: '', sex: 'MALE', dateOfBirth: '', weightKg: '' });
       const [loading, setLoading] = useState(false);
-
-      const handleSubmit = async (e) => {
-        e.preventDefault();
-        setLoading(true);
-        await onSave({ ...form, weightKg: form.weightKg ? parseFloat(form.weightKg) : null });
-        setLoading(false);
-      };
+      const handleSubmit = async (e) => { e.preventDefault(); setLoading(true); await onSave({ ...form, weightKg: form.weightKg ? parseFloat(form.weightKg) : null }); setLoading(false); };
 
       return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-            <h2 className="text-xl font-bold mb-4">Add New Pet</h2>
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-6"><h2 className="text-xl font-bold text-slate-900">Add New Patient</h2><button onClick={onClose} className="text-slate-400 hover:text-slate-600"><Icons.X /></button></div>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                <input type="text" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
-              </div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1.5">Patient Name *</label><input type="text" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500" required /></div>
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Species *</label>
-                  <select value={form.species} onChange={e => setForm({...form, species: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                    <option value="DOG">Dog</option>
-                    <option value="CAT">Cat</option>
-                    <option value="BIRD">Bird</option>
-                    <option value="OTHER">Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Sex *</label>
-                  <select value={form.sex} onChange={e => setForm({...form, sex: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                    <option value="MALE">Male</option>
-                    <option value="FEMALE">Female</option>
-                    <option value="MALE_NEUTERED">Male (Neutered)</option>
-                    <option value="FEMALE_SPAYED">Female (Spayed)</option>
-                  </select>
-                </div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1.5">Species *</label><select value={form.species} onChange={e => setForm({...form, species: e.target.value})} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500"><option value="DOG">Canine</option><option value="CAT">Feline</option><option value="BIRD">Avian</option><option value="OTHER">Other</option></select></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1.5">Sex *</label><select value={form.sex} onChange={e => setForm({...form, sex: e.target.value})} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500"><option value="MALE">Male (Intact)</option><option value="FEMALE">Female (Intact)</option><option value="MALE_NEUTERED">Male (Neutered)</option><option value="FEMALE_SPAYED">Female (Spayed)</option></select></div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Breed</label>
-                <input type="text" value={form.breed} onChange={e => setForm({...form, breed: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-              </div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1.5">Breed</label><input type="text" value={form.breed} onChange={e => setForm({...form, breed: e.target.value})} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
-                  <input type="date" value={form.dateOfBirth} onChange={e => setForm({...form, dateOfBirth: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Weight (kg)</label>
-                  <input type="number" step="0.1" value={form.weightKg} onChange={e => setForm({...form, weightKg: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1.5">Date of Birth</label><input type="date" value={form.dateOfBirth} onChange={e => setForm({...form, dateOfBirth: e.target.value})} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1.5">Weight (kg)</label><input type="number" step="0.1" value={form.weightKg} onChange={e => setForm({...form, weightKg: e.target.value})} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
               </div>
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-                <button type="submit" disabled={loading} className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">
-                  {loading ? 'Adding...' : 'Add Pet'}
-                </button>
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={onClose} className="flex-1 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 font-medium">Cancel</button>
+                <button type="submit" disabled={loading} className="flex-1 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 font-medium">{loading ? 'Adding...' : 'Add Patient'}</button>
               </div>
             </form>
+          </div>
+        </div>
+      );
+    }
+
+    // Upload Modal
+    function UploadModal({ pet, onClose, onSuccess }) {
+      const [dragOver, setDragOver] = useState(false);
+      const [file, setFile] = useState(null);
+      const [uploading, setUploading] = useState(false);
+      const [result, setResult] = useState(null);
+      const [error, setError] = useState('');
+
+      const handleDrop = useCallback((e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f && (f.type === 'application/pdf' || f.type.startsWith('image/'))) { setFile(f); setError(''); } else { setError('Please upload a PDF or image'); } }, []);
+      const handleFileSelect = (e) => { if (e.target.files[0]) { setFile(e.target.files[0]); setError(''); } };
+      const handleUpload = async () => {
+        if (!file) return;
+        setUploading(true);
+        setError('');
+        const formData = new FormData();
+        formData.append('document', file);
+        try { const data = await api.upload(`/api/pets/${pet.id}/upload`, formData); if (data.error) { setError(data.error); } else { setResult(data); } } catch { setError('Failed to process document'); } finally { setUploading(false); }
+      };
+      const handleClose = () => { if (result) onSuccess(); onClose(); };
+
+      return (
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6"><h2 className="text-xl font-bold text-slate-900">Upload Medical Record</h2><button onClick={handleClose} className="text-slate-400 hover:text-slate-600"><Icons.X /></button></div>
+            {!result ? (
+              <>
+                <div className="mb-5 p-4 bg-primary-50 border border-primary-200 rounded-lg"><p className="text-primary-800 text-sm"><strong>AI-Powered Extraction:</strong> Upload a PDF or photo and we'll automatically extract and categorize all medical data.</p></div>
+                <div className={`upload-zone rounded-xl p-8 text-center mb-5 ${dragOver ? 'drag-over' : ''}`} onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}>
+                  {file ? (
+                    <div><div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center mx-auto mb-3 text-primary-600"><Icons.FileText /></div><p className="font-medium text-slate-900">{file.name}</p><p className="text-sm text-slate-500">{(file.size / 1024).toFixed(1)} KB</p><button onClick={() => setFile(null)} className="mt-3 text-red-600 text-sm font-medium hover:text-red-700">Remove</button></div>
+                  ) : (
+                    <div><div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center mx-auto mb-3 text-slate-400"><Icons.Upload /></div><p className="font-medium text-slate-900 mb-1">Drop your medical record here</p><p className="text-sm text-slate-500 mb-4">PDF, JPG, or PNG accepted</p><label className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 cursor-pointer font-medium">Browse Files<input type="file" className="hidden" accept=".pdf,image/*" onChange={handleFileSelect} /></label></div>
+                  )}
+                </div>
+                {error && <div className="mb-5 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{error}</div>}
+                <div className="flex gap-3">
+                  <button onClick={handleClose} className="flex-1 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 font-medium">Cancel</button>
+                  <button onClick={handleUpload} disabled={!file || uploading} className="flex-1 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2">
+                    {uploading ? <><svg className="spinner w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" strokeOpacity="0.25" /><path d="M12 2a10 10 0 0 1 10 10" /></svg>Processing...</> : 'Upload & Extract'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div>
+                <div className="mb-5 p-4 bg-accent-50 border border-accent-200 rounded-lg flex items-start gap-3"><Icons.Check className="w-5 h-5 text-accent-600 mt-0.5" /><p className="text-accent-800 font-medium">{result.message}</p></div>
+                <h3 className="font-semibold text-slate-900 mb-4">Extracted Data</h3>
+                <div className="space-y-3 mb-6">
+                  {result.saved.records?.length > 0 && <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg"><p className="font-medium text-slate-900">Medical Record</p><p className="text-sm text-slate-600">{result.extracted.document_type} — {result.extracted.date_of_service}</p></div>}
+                  {result.saved.vaccinations?.length > 0 && <div className="p-3 bg-accent-50 border border-accent-200 rounded-lg"><p className="font-medium text-accent-900">Vaccinations ({result.saved.vaccinations.length})</p>{result.saved.vaccinations.map((v, i) => <p key={i} className="text-sm text-accent-700">• {v.name} — {v.date}</p>)}</div>}
+                  {result.saved.medications?.length > 0 && <div className="p-3 bg-primary-50 border border-primary-200 rounded-lg"><p className="font-medium text-primary-900">Medications ({result.saved.medications.length})</p>{result.saved.medications.map((m, i) => <p key={i} className="text-sm text-primary-700">• {m.drug_name} {m.dose}</p>)}</div>}
+                  {result.saved.labs?.length > 0 && <div className="p-3 bg-violet-50 border border-violet-200 rounded-lg"><p className="font-medium text-violet-900">Lab Results</p>{result.saved.labs.map((l, i) => <p key={i} className="text-sm text-violet-700">• {l.panel}</p>)}</div>}
+                  {result.saved.allergies?.length > 0 && <div className="p-3 bg-red-50 border border-red-200 rounded-lg"><p className="font-medium text-red-900">Allergies ({result.saved.allergies.length})</p>{result.saved.allergies.map((a, i) => <p key={i} className="text-sm text-red-700">• {a.allergen}</p>)}</div>}
+                  {result.saved.conditions?.length > 0 && <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg"><p className="font-medium text-amber-900">Conditions ({result.saved.conditions.length})</p>{result.saved.conditions.map((c, i) => <p key={i} className="text-sm text-amber-700">• {c.condition}</p>)}</div>}
+                  {result.extracted.weight_kg && <div className="p-3 bg-teal-50 border border-teal-200 rounded-lg"><p className="font-medium text-teal-900">Weight Updated</p><p className="text-sm text-teal-700">{result.extracted.weight_kg} kg</p></div>}
+                </div>
+                <button onClick={handleClose} className="w-full px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium">Done</button>
+              </div>
+            )}
           </div>
         </div>
       );
@@ -403,251 +406,140 @@
       const [activeTab, setActiveTab] = useState('overview');
       const [timeline, setTimeline] = useState([]);
       const [showShare, setShowShare] = useState(false);
+      const [showUpload, setShowUpload] = useState(false);
 
-      useEffect(() => {
-        api.get(`/api/pets/${pet.id}`).then(setPet);
-        api.get(`/api/pets/${pet.id}/timeline`).then(setTimeline);
-      }, [pet.id]);
+      const refreshPet = () => { api.get(`/api/pets/${pet.id}`).then(setPet); api.get(`/api/pets/${pet.id}/timeline`).then(setTimeline); };
+      useEffect(() => { refreshPet(); }, [pet.id]);
 
       const age = pet.dateOfBirth ? Math.floor((new Date() - new Date(pet.dateOfBirth)) / (365.25 * 24 * 60 * 60 * 1000)) : null;
 
       return (
-        <div className="min-h-screen bg-gray-50">
-          <header className="bg-white border-b border-gray-200">
-            <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-4">
-              <button onClick={onBack} className="text-gray-600 hover:text-gray-900">← Back</button>
-              <span className="text-2xl">{pet.species === 'DOG' ? '🐕' : pet.species === 'CAT' ? '🐈' : '🐾'}</span>
-              <span className="font-bold text-xl">{pet.name}</span>
-            </div>
-          </header>
-
-          <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
-            {/* Pet Header Card */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <div className="flex items-start justify-between">
-                <div className="flex items-start gap-6">
-                  <div className="text-7xl">{pet.species === 'DOG' ? '🐕' : pet.species === 'CAT' ? '🐈' : '🐾'}</div>
+        <div className="min-h-screen bg-slate-50">
+          <Header onBack={onBack} />
+          <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+            {/* Header Card */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                <div className="flex items-start gap-5">
+                  <div className="p-3 bg-primary-50 rounded-xl"><SpeciesIcon species={pet.species} size="lg" /></div>
                   <div>
-                    <h1 className="text-2xl font-bold text-gray-900">{pet.name}</h1>
-                    <p className="text-gray-600">{pet.breed}</p>
-                    <div className="flex flex-wrap gap-4 mt-2 text-sm text-gray-600">
-                      <span>{pet.sex?.replace('_', ' ')}</span>
+                    <h1 className="text-2xl font-bold text-slate-900">{pet.name}</h1>
+                    <p className="text-slate-600">{pet.breed}</p>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-sm text-slate-500">
+                      <span>{pet.sex?.replace(/_/g, ' ')}</span>
                       {age !== null && <span>{age} years old</span>}
                       {pet.weightKg && <span>{pet.weightKg} kg</span>}
-                      {pet.microchipId && <span>🏷️ {pet.microchipId}</span>}
+                      {pet.microchipId && <span className="flex items-center gap-1"><Icons.Chip /> {pet.microchipId}</span>}
                     </div>
                   </div>
                 </div>
-                <button onClick={() => setShowShare(true)} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
-                  Share Records
-                </button>
+                <div className="flex gap-3">
+                  <button onClick={() => setShowUpload(true)} className="flex-1 lg:flex-none px-4 py-2.5 bg-accent-600 text-white rounded-lg hover:bg-accent-700 flex items-center justify-center gap-2 font-medium"><Icons.Upload className="w-4 h-4" /> Upload Record</button>
+                  <button onClick={() => setShowShare(true)} className="flex-1 lg:flex-none px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 flex items-center justify-center gap-2 font-medium"><Icons.Share className="w-4 h-4" /> Share</button>
+                </div>
               </div>
             </div>
 
-            {/* Allergies Alert */}
+            {/* Allergies */}
             {pet.allergies?.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                <div className="flex items-center gap-2 text-red-800 font-semibold mb-2">
-                  ⚠️ Allergies & Sensitivities
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {pet.allergies.map((a, i) => (
-                    <span key={i} className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm">
-                      {a.allergen} ({a.severity})
-                    </span>
-                  ))}
-                </div>
+                <div className="flex items-center gap-2 text-red-800 font-semibold mb-2"><Icons.Alert className="w-5 h-5" /> Known Allergies</div>
+                <div className="flex flex-wrap gap-2">{pet.allergies.map((a, i) => <span key={i} className="px-3 py-1.5 bg-red-100 text-red-800 border border-red-200 rounded-full text-sm font-medium">{a.allergen} ({a.severity})</span>)}</div>
               </div>
             )}
 
             {/* Tabs */}
-            <div className="flex gap-2 border-b border-gray-200">
+            <div className="flex gap-1 border-b border-slate-200 overflow-x-auto">
               {['overview', 'timeline', 'medications', 'vaccinations'].map(tab => (
-                <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 font-medium capitalize ${activeTab === tab ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-600 hover:text-gray-900'}`}>
-                  {tab}
-                </button>
+                <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-3 font-medium capitalize whitespace-nowrap border-b-2 transition-colors ${activeTab === tab ? 'text-primary-600 border-primary-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>{tab}</button>
               ))}
             </div>
 
-            {/* Overview Tab */}
+            {/* Overview */}
             {activeTab === 'overview' && (
               <div className="grid md:grid-cols-2 gap-6">
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-                  <h3 className="font-semibold text-gray-900 mb-4">💜 Chronic Conditions</h3>
-                  {!pet.conditions?.length ? (
-                    <p className="text-gray-500 text-sm">No chronic conditions recorded</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {pet.conditions.map((c, i) => (
-                        <div key={i} className="flex items-center justify-between">
-                          <span className="font-medium">{c.condition}</span>
-                          <span className={`px-2 py-0.5 rounded text-xs ${c.status === 'active' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
-                            {c.status}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                  <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2"><Icons.Heart className="w-5 h-5 text-primary-600" /> Chronic Conditions</h3>
+                  {!pet.conditions?.length ? <p className="text-slate-400 text-sm">No chronic conditions recorded</p> : (
+                    <div className="space-y-3">{pet.conditions.map((c, i) => <div key={i} className="flex items-center justify-between"><span className="font-medium text-slate-900">{c.condition}</span><span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${c.status === 'active' ? 'bg-amber-100 text-amber-700' : 'bg-accent-100 text-accent-700'}`}>{c.status}</span></div>)}</div>
                   )}
                 </div>
-
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-                  <h3 className="font-semibold text-gray-900 mb-4">💊 Active Medications</h3>
-                  {!pet.medications?.filter(m => m.status === 'ACTIVE').length ? (
-                    <p className="text-gray-500 text-sm">No active medications</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {pet.medications.filter(m => m.status === 'ACTIVE').map((m, i) => (
-                        <div key={i} className="flex items-center justify-between text-sm">
-                          <span className="font-medium">{m.drug_name}</span>
-                          <span className="text-gray-500">{m.frequency}</span>
-                        </div>
-                      ))}
-                    </div>
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                  <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2"><Icons.Pill className="w-5 h-5 text-primary-600" /> Active Medications</h3>
+                  {!pet.medications?.filter(m => m.status === 'ACTIVE').length ? <p className="text-slate-400 text-sm">No active medications</p> : (
+                    <div className="space-y-3">{pet.medications.filter(m => m.status === 'ACTIVE').map((m, i) => <div key={i} className="flex items-center justify-between text-sm"><div><span className="font-medium text-slate-900">{m.drug_name}</span>{m.dose && <span className="text-slate-500 ml-1">{m.dose}</span>}</div><span className="text-slate-500">{m.frequency}</span></div>)}</div>
                   )}
                 </div>
-
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-                  <h3 className="font-semibold text-gray-900 mb-4">💉 Vaccinations</h3>
-                  {!pet.vaccinations?.length ? (
-                    <p className="text-gray-500 text-sm">No vaccinations recorded</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {pet.vaccinations.slice(0, 5).map((v, i) => {
-                        const expired = v.valid_until && new Date(v.valid_until) < new Date();
-                        return (
-                          <div key={i} className="flex items-center justify-between text-sm">
-                            <span className="font-medium">{v.vaccine_name}</span>
-                            <span className={`px-2 py-0.5 rounded text-xs ${expired ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                              {expired ? 'Expired' : 'Current'}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                  <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2"><Icons.Syringe className="w-5 h-5 text-primary-600" /> Recent Vaccinations</h3>
+                  {!pet.vaccinations?.length ? <p className="text-slate-400 text-sm">No vaccinations recorded</p> : (
+                    <div className="space-y-3">{pet.vaccinations.slice(0, 5).map((v, i) => { const expired = v.valid_until && new Date(v.valid_until) < new Date(); return <div key={i} className="flex items-center justify-between text-sm"><span className="font-medium text-slate-900">{v.vaccine_name}</span><span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${expired ? 'bg-red-100 text-red-700' : 'bg-accent-100 text-accent-700'}`}>{expired ? 'Expired' : 'Current'}</span></div>; })}</div>
                   )}
                 </div>
-
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-                  <h3 className="font-semibold text-gray-900 mb-4">⚖️ Weight History</h3>
-                  {!pet.weightHistory?.length ? (
-                    <p className="text-gray-500 text-sm">No weight records</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {pet.weightHistory.slice(0, 5).map((w, i) => (
-                        <div key={i} className="flex items-center justify-between text-sm">
-                          <span className="text-gray-600">{w.date}</span>
-                          <span className="font-medium">{w.weight_kg} kg</span>
-                        </div>
-                      ))}
-                    </div>
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                  <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2"><Icons.Scale className="w-5 h-5 text-primary-600" /> Weight History</h3>
+                  {!pet.weightHistory?.length ? <p className="text-slate-400 text-sm">No weight records</p> : (
+                    <div className="space-y-3">{pet.weightHistory.slice(0, 5).map((w, i) => <div key={i} className="flex items-center justify-between text-sm"><span className="text-slate-500">{w.date}</span><span className="font-medium text-slate-900">{w.weight_kg} kg</span></div>)}</div>
                   )}
                 </div>
               </div>
             )}
 
-            {/* Timeline Tab */}
+            {/* Timeline */}
             {activeTab === 'timeline' && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                 {timeline.length === 0 ? (
-                  <p className="text-gray-500 text-center py-8">No records yet</p>
+                  <div className="text-center py-12"><div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center mx-auto mb-4 text-slate-400"><Icons.Calendar /></div><p className="text-slate-500 mb-4">No records yet</p><button onClick={() => setShowUpload(true)} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium">Upload First Record</button></div>
                 ) : (
-                  <div className="space-y-6">
-                    {timeline.map((event, i) => (
-                      <div key={i} className="flex gap-4 relative">
-                        {i < timeline.length - 1 && <div className="absolute left-5 top-12 bottom-0 w-0.5 bg-gray-200" />}
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                          event.type === 'record' ? 'bg-indigo-100 text-indigo-600' :
-                          event.type === 'vaccination' ? 'bg-green-100 text-green-600' :
-                          'bg-teal-100 text-teal-600'
-                        }`}>
-                          {event.type === 'record' ? '📋' : event.type === 'vaccination' ? '💉' : '🧪'}
-                        </div>
-                        <div className="flex-1 pb-6">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold text-gray-900">{event.subtype}</span>
-                            <span className="text-sm text-gray-500">{event.date}</span>
-                          </div>
-                          {event.data.summary && <p className="text-gray-600 text-sm">{event.data.summary}</p>}
-                          {event.data.facility_name && <p className="text-gray-500 text-xs mt-1">{event.data.facility_name}</p>}
-                        </div>
+                  <div className="space-y-6">{timeline.map((event, i) => (
+                    <div key={i} className="flex gap-4 relative">
+                      {i < timeline.length - 1 && <div className="absolute left-5 top-12 bottom-0 w-0.5 bg-slate-200" />}
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${event.type === 'record' ? 'bg-slate-100 text-slate-600' : event.type === 'vaccination' ? 'bg-accent-100 text-accent-600' : 'bg-violet-100 text-violet-600'}`}>
+                        {event.type === 'record' ? <Icons.FileText /> : event.type === 'vaccination' ? <Icons.Syringe /> : <Icons.Activity />}
                       </div>
-                    ))}
-                  </div>
+                      <div className="flex-1 pb-6">
+                        <div className="flex items-center gap-3 mb-1"><span className="font-semibold text-slate-900">{event.subtype}</span><span className="text-sm text-slate-500">{event.date}</span></div>
+                        {event.data.summary && <p className="text-slate-600 text-sm">{event.data.summary}</p>}
+                        {event.data.facility_name && <p className="text-slate-400 text-xs mt-1">{event.data.facility_name}</p>}
+                      </div>
+                    </div>
+                  ))}</div>
                 )}
               </div>
             )}
 
-            {/* Medications Tab */}
+            {/* Medications */}
             {activeTab === 'medications' && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-                <div className="p-4 border-b border-gray-200">
-                  <h3 className="font-semibold">Medications</h3>
-                </div>
-                {!pet.medications?.length ? (
-                  <div className="p-8 text-center text-gray-500">No medications recorded</div>
-                ) : (
-                  <div className="divide-y divide-gray-100">
-                    {pet.medications.map((m, i) => (
-                      <div key={i} className="p-4 flex items-center justify-between">
-                        <div>
-                          <div className="font-medium">{m.drug_name}</div>
-                          <div className="text-sm text-gray-600">{m.dose} • {m.frequency}</div>
-                          {m.indication && <div className="text-xs text-gray-500">For: {m.indication}</div>}
-                        </div>
-                        <span className={`px-2 py-1 rounded text-xs ${m.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-                          {m.status}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200">
+                <div className="p-5 border-b border-slate-200"><h3 className="font-semibold text-slate-900">Medications</h3></div>
+                {!pet.medications?.length ? <div className="p-12 text-center text-slate-500">No medications recorded</div> : (
+                  <div className="divide-y divide-slate-100">{pet.medications.map((m, i) => (
+                    <div key={i} className="p-5 flex items-center justify-between">
+                      <div><div className="font-medium text-slate-900">{m.drug_name}</div><div className="text-sm text-slate-600">{m.dose} · {m.frequency}</div>{m.indication && <div className="text-xs text-slate-500 mt-1">Indication: {m.indication}</div>}</div>
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${m.status === 'ACTIVE' ? 'bg-accent-100 text-accent-700' : 'bg-slate-100 text-slate-600'}`}>{m.status}</span>
+                    </div>
+                  ))}</div>
                 )}
               </div>
             )}
 
-            {/* Vaccinations Tab */}
+            {/* Vaccinations */}
             {activeTab === 'vaccinations' && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-                <div className="p-4 border-b border-gray-200">
-                  <h3 className="font-semibold">Vaccinations</h3>
-                </div>
-                {!pet.vaccinations?.length ? (
-                  <div className="p-8 text-center text-gray-500">No vaccinations recorded</div>
-                ) : (
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200">
+                <div className="p-5 border-b border-slate-200"><h3 className="font-semibold text-slate-900">Vaccination Records</h3></div>
+                {!pet.vaccinations?.length ? <div className="p-12 text-center text-slate-500">No vaccinations recorded</div> : (
                   <div className="overflow-x-auto">
                     <table className="w-full">
-                      <thead className="bg-gray-50 text-left text-sm text-gray-600">
-                        <tr>
-                          <th className="p-4">Vaccine</th>
-                          <th className="p-4">Date Given</th>
-                          <th className="p-4">Valid Until</th>
-                          <th className="p-4">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {pet.vaccinations.map((v, i) => {
-                          const expired = v.valid_until && new Date(v.valid_until) < new Date();
-                          return (
-                            <tr key={i}>
-                              <td className="p-4 font-medium">{v.vaccine_name}</td>
-                              <td className="p-4 text-gray-600">{v.administration_date}</td>
-                              <td className="p-4 text-gray-600">{v.valid_until || '-'}</td>
-                              <td className="p-4">
-                                <span className={`px-2 py-1 rounded text-xs ${expired ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                                  {expired ? 'Expired' : 'Current'}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
+                      <thead className="bg-slate-50 text-left text-sm text-slate-600"><tr><th className="p-4 font-medium">Vaccine</th><th className="p-4 font-medium">Date Administered</th><th className="p-4 font-medium">Valid Until</th><th className="p-4 font-medium">Status</th></tr></thead>
+                      <tbody className="divide-y divide-slate-100">{pet.vaccinations.map((v, i) => { const expired = v.valid_until && new Date(v.valid_until) < new Date(); return <tr key={i}><td className="p-4 font-medium text-slate-900">{v.vaccine_name}</td><td className="p-4 text-slate-600">{v.administration_date}</td><td className="p-4 text-slate-600">{v.valid_until || '—'}</td><td className="p-4"><span className={`px-2.5 py-1 rounded-full text-xs font-medium ${expired ? 'bg-red-100 text-red-700' : 'bg-accent-100 text-accent-700'}`}>{expired ? 'Expired' : 'Current'}</span></td></tr>; })}</tbody>
                     </table>
                   </div>
                 )}
               </div>
             )}
           </main>
-
           {showShare && <ShareModal pet={pet} onClose={() => setShowShare(false)} />}
+          {showUpload && <UploadModal pet={pet} onClose={() => setShowUpload(false)} onSuccess={refreshPet} />}
         </div>
       );
     }
@@ -658,47 +550,24 @@
       const [loading, setLoading] = useState(false);
       const [copied, setCopied] = useState(false);
 
-      const createShare = async () => {
-        setLoading(true);
-        const data = await api.post('/api/share/quick-share', { petId: pet.id, duration: '7d', permissionLevel: 'FULL_ACCESS' });
-        setShareData(data);
-        setLoading(false);
-      };
-
-      const copyLink = () => {
-        navigator.clipboard.writeText(shareData.shareUrl);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      };
+      const createShare = async () => { setLoading(true); const data = await api.post('/api/share/quick-share', { petId: pet.id, duration: '7d', permissionLevel: 'FULL_ACCESS' }); setShareData(data); setLoading(false); };
+      const copyLink = () => { navigator.clipboard.writeText(shareData.shareUrl); setCopied(true); setTimeout(() => setCopied(false), 2000); };
 
       return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">Share {pet.name}'s Records</h2>
-              <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
-            </div>
-
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-6"><h2 className="text-xl font-bold text-slate-900">Share Medical Records</h2><button onClick={onClose} className="text-slate-400 hover:text-slate-600"><Icons.X /></button></div>
             {!shareData ? (
               <div className="text-center py-6">
-                <p className="text-gray-600 mb-4">Create a secure link to share {pet.name}'s health records with your vet or caregiver.</p>
-                <button onClick={createShare} disabled={loading} className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">
-                  {loading ? 'Creating...' : 'Generate Share Link'}
-                </button>
+                <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center mx-auto mb-4 text-primary-600"><Icons.Share /></div>
+                <p className="text-slate-600 mb-6">Generate a secure link to share {pet.name}'s health records with veterinary professionals.</p>
+                <button onClick={createShare} disabled={loading} className="px-6 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 font-medium">{loading ? 'Generating...' : 'Generate Share Link'}</button>
               </div>
             ) : (
               <div>
-                <div className="bg-gray-50 rounded-lg p-4 text-center mb-4">
-                  <img src={shareData.qrCode} alt="QR Code" className="w-48 h-48 mx-auto mb-3" />
-                  <p className="text-sm text-gray-600">Scan to view records</p>
-                </div>
-                <div className="flex gap-2 mb-4">
-                  <input type="text" value={shareData.shareUrl} readOnly className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm" />
-                  <button onClick={copyLink} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
-                    {copied ? '✓' : 'Copy'}
-                  </button>
-                </div>
-                <p className="text-sm text-gray-500 text-center">Link expires in 7 days</p>
+                <div className="bg-slate-50 rounded-lg p-6 text-center mb-5"><img src={shareData.qrCode} alt="QR Code" className="w-48 h-48 mx-auto mb-3" /><p className="text-sm text-slate-600">Scan to access records</p></div>
+                <div className="flex gap-2 mb-5"><input type="text" value={shareData.shareUrl} readOnly className="flex-1 px-3 py-2.5 border border-slate-300 rounded-lg bg-slate-50 text-sm font-mono" /><button onClick={copyLink} className="px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium">{copied ? <Icons.Check /> : 'Copy'}</button></div>
+                <div className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 p-3 rounded-lg"><Icons.Clock />Link expires in 7 days</div>
               </div>
             )}
           </div>
@@ -706,93 +575,37 @@
       );
     }
 
-    // Shared View (public)
+    // Shared View
     function SharedView({ token }) {
       const [data, setData] = useState(null);
       const [error, setError] = useState('');
       const [loading, setLoading] = useState(true);
 
-      useEffect(() => {
-        fetch(`/api/share/access/${token}`, { method: 'POST' })
-          .then(r => r.ok ? r.json() : r.json().then(d => Promise.reject(d.error)))
-          .then(setData)
-          .catch(e => setError(e))
-          .finally(() => setLoading(false));
-      }, [token]);
+      useEffect(() => { fetch(`/api/share/access/${token}`, { method: 'POST' }).then(r => r.ok ? r.json() : r.json().then(d => Promise.reject(d.error))).then(setData).catch(e => setError(e)).finally(() => setLoading(false)); }, [token]);
 
-      if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
-      if (error) return <div className="min-h-screen flex items-center justify-center text-red-600">{error}</div>;
+      if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-600">Loading records...</div>;
+      if (error) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-red-600">{error}</div>;
 
       const pet = data.pet;
 
       return (
-        <div className="min-h-screen bg-gray-50">
-          <div className="bg-primary-800 text-white py-6">
+        <div className="min-h-screen bg-slate-50">
+          <div className="gradient-bg text-white py-8">
             <div className="max-w-3xl mx-auto px-4">
-              <div className="flex items-center gap-2 text-primary-200 text-sm mb-4">
-                🔒 Secure health record shared via PetRecord
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="text-5xl">{pet.species === 'DOG' ? '🐕' : pet.species === 'CAT' ? '🐈' : '🐾'}</div>
-                <div>
-                  <h1 className="text-2xl font-bold">{pet.name}</h1>
-                  <p className="text-primary-200">{pet.breed} • {pet.sex} • {pet.weightKg} kg</p>
-                </div>
+              <div className="flex items-center gap-2 text-primary-200 text-sm mb-6"><Icons.Shield /> Secure health record shared via PetRecord</div>
+              <div className="flex items-center gap-5">
+                <div className="p-3 bg-white/10 rounded-xl"><SpeciesIcon species={pet.species} size="lg" /></div>
+                <div><h1 className="text-3xl font-bold">{pet.name}</h1><p className="text-primary-200">{pet.breed} · {pet.sex} · {pet.weightKg} kg</p></div>
               </div>
             </div>
           </div>
-
-          <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
-            {data.allergies?.length > 0 && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                <h3 className="font-semibold text-red-800 mb-2">⚠️ Allergies</h3>
-                <div className="flex flex-wrap gap-2">
-                  {data.allergies.map((a, i) => (
-                    <span key={i} className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm">{a.allergen}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {data.conditions?.length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm border p-4">
-                <h3 className="font-semibold mb-3">Conditions</h3>
-                {data.conditions.map((c, i) => (
-                  <div key={i} className="flex justify-between py-2 border-b last:border-0">
-                    <span>{c.condition}</span>
-                    <span className="text-sm text-gray-500">{c.status}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {data.activeMedications?.length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm border p-4">
-                <h3 className="font-semibold mb-3">Current Medications</h3>
-                {data.activeMedications.map((m, i) => (
-                  <div key={i} className="py-2 border-b last:border-0">
-                    <div className="font-medium">{m.drug_name}</div>
-                    <div className="text-sm text-gray-600">{m.dose} • {m.frequency}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {data.vaccinations?.length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm border p-4">
-                <h3 className="font-semibold mb-3">Vaccinations</h3>
-                {data.vaccinations.map((v, i) => (
-                  <div key={i} className="flex justify-between py-2 border-b last:border-0">
-                    <span>{v.vaccine_name}</span>
-                    <span className="text-sm text-gray-500">{v.administration_date}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <p className="text-center text-sm text-gray-500 pt-4">
-              Health records provided by <a href="/" className="text-primary-600">PetRecord</a>
-            </p>
+          <div className="max-w-3xl mx-auto px-4 py-8 space-y-5">
+            {data.allergies?.length > 0 && <div className="bg-red-50 border border-red-200 rounded-xl p-5"><h3 className="font-semibold text-red-800 mb-3 flex items-center gap-2"><Icons.Alert /> Known Allergies</h3><div className="flex flex-wrap gap-2">{data.allergies.map((a, i) => <span key={i} className="px-3 py-1.5 bg-red-100 text-red-800 rounded-full text-sm font-medium">{a.allergen}</span>)}</div></div>}
+            {data.conditions?.length > 0 && <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5"><h3 className="font-semibold text-slate-900 mb-4">Conditions</h3>{data.conditions.map((c, i) => <div key={i} className="flex justify-between py-3 border-b border-slate-100 last:border-0"><span className="font-medium text-slate-900">{c.condition}</span><span className="text-sm text-slate-500">{c.status}</span></div>)}</div>}
+            {data.activeMedications?.length > 0 && <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5"><h3 className="font-semibold text-slate-900 mb-4">Current Medications</h3>{data.activeMedications.map((m, i) => <div key={i} className="py-3 border-b border-slate-100 last:border-0"><div className="font-medium text-slate-900">{m.drug_name}</div><div className="text-sm text-slate-600">{m.dose} · {m.frequency}</div></div>)}</div>}
+            {data.vaccinations?.length > 0 && <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5"><h3 className="font-semibold text-slate-900 mb-4">Vaccination Records</h3>{data.vaccinations.map((v, i) => <div key={i} className="flex justify-between py-3 border-b border-slate-100 last:border-0"><span className="font-medium text-slate-900">{v.vaccine_name}</span><span className="text-sm text-slate-500">{v.administration_date}</span></div>)}</div>}
+            {data.medicalRecords?.length > 0 && <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5"><h3 className="font-semibold text-slate-900 mb-4">Medical Records</h3>{data.medicalRecords.map((r, i) => <div key={i} className="py-4 border-b border-slate-100 last:border-0"><div className="flex justify-between items-start mb-1"><span className="font-medium text-slate-900">{r.record_type}</span><span className="text-sm text-slate-500">{r.date_of_service}</span></div>{r.summary && <p className="text-sm text-slate-600">{r.summary}</p>}{r.facility_name && <p className="text-xs text-slate-400 mt-1">{r.facility_name}</p>}</div>)}</div>}
+            <div className="text-center pt-6"><Icons.Logo /><p className="text-sm text-slate-500 mt-2">Powered by PetRecord</p></div>
           </div>
         </div>
       );
@@ -804,34 +617,17 @@
       const [view, setView] = useState('login');
       const [selectedPet, setSelectedPet] = useState(null);
 
-      // Check for share URL
       const path = window.location.pathname;
-      if (path.startsWith('/share/')) {
-        const token = path.replace('/share/', '');
-        return <SharedView token={token} />;
-      }
+      if (path.startsWith('/share/')) return <SharedView token={path.replace('/share/', '')} />;
 
-      if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+      if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-600">Loading...</div>;
 
-      if (!isAuthenticated) {
-        return view === 'login' 
-          ? <LoginPage onSwitch={() => setView('register')} />
-          : <RegisterPage onSwitch={() => setView('login')} />;
-      }
-
-      if (selectedPet) {
-        return <PetProfile pet={selectedPet} onBack={() => setSelectedPet(null)} />;
-      }
-
+      if (!isAuthenticated) return view === 'login' ? <LoginPage onSwitch={() => setView('register')} /> : <RegisterPage onSwitch={() => setView('login')} />;
+      if (selectedPet) return <PetProfile pet={selectedPet} onBack={() => setSelectedPet(null)} />;
       return <Dashboard onSelectPet={setSelectedPet} />;
     }
 
-    // Render
-    ReactDOM.createRoot(document.getElementById('root')).render(
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    );
+    ReactDOM.createRoot(document.getElementById('root')).render(<AuthProvider><App /></AuthProvider>);
   </script>
 </body>
 </html>
