@@ -376,7 +376,7 @@ app.get('*', (req, res) => {
 
 // Start server
 initDb().then(() => {
-  app.listen(PORT, () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`🐾 PetRecord running on http://localhost:${PORT}`);
     console.log(`   Demo: demo@petrecord.com / demo123`);
   });
