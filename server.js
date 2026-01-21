@@ -634,6 +634,176 @@ app.get('/api/records/labs/pet/:petId', auth, async (req, res) => {
   }
 });
 
+// Get lab trends for charting
+app.get('/api/pets/:id/lab-trends', auth, async (req, res) => {
+  try {
+    const pet = await queryOne("SELECT id FROM pets WHERE id = $1 AND owner_id = $2", [req.params.id, req.userId]);
+    if (!pet) return res.status(404).json({ error: 'Pet not found' });
+    
+    const labs = await query("SELECT * FROM lab_results WHERE pet_id = $1 ORDER BY collection_date ASC", [req.params.id]);
+    
+    // Reference ranges for common tests
+    const referenceRanges = {
+      // Chemistry
+      'BUN': { min: 7, max: 27, unit: 'mg/dL', category: 'Kidney', name: 'Blood Urea Nitrogen' },
+      'Creatinine': { min: 0.5, max: 1.8, unit: 'mg/dL', category: 'Kidney', name: 'Creatinine' },
+      'SDMA': { min: 0, max: 14, unit: 'µg/dL', category: 'Kidney', name: 'SDMA' },
+      'Phosphorus': { min: 2.5, max: 6.8, unit: 'mg/dL', category: 'Kidney', name: 'Phosphorus' },
+      'ALT': { min: 10, max: 125, unit: 'U/L', category: 'Liver', name: 'ALT (SGPT)' },
+      'ALP': { min: 23, max: 212, unit: 'U/L', category: 'Liver', name: 'Alkaline Phosphatase' },
+      'AST': { min: 0, max: 50, unit: 'U/L', category: 'Liver', name: 'AST (SGOT)' },
+      'GGT': { min: 0, max: 11, unit: 'U/L', category: 'Liver', name: 'GGT' },
+      'Bilirubin': { min: 0, max: 0.9, unit: 'mg/dL', category: 'Liver', name: 'Total Bilirubin' },
+      'Albumin': { min: 2.3, max: 4.0, unit: 'g/dL', category: 'Liver', name: 'Albumin' },
+      'Glucose': { min: 74, max: 143, unit: 'mg/dL', category: 'Metabolic', name: 'Glucose' },
+      'Fructosamine': { min: 190, max: 365, unit: 'µmol/L', category: 'Metabolic', name: 'Fructosamine' },
+      'Cholesterol': { min: 110, max: 320, unit: 'mg/dL', category: 'Metabolic', name: 'Cholesterol' },
+      'Triglycerides': { min: 50, max: 150, unit: 'mg/dL', category: 'Metabolic', name: 'Triglycerides' },
+      'Total Protein': { min: 5.2, max: 8.2, unit: 'g/dL', category: 'Protein', name: 'Total Protein' },
+      'Globulin': { min: 2.5, max: 4.5, unit: 'g/dL', category: 'Protein', name: 'Globulin' },
+      // Electrolytes
+      'Sodium': { min: 144, max: 160, unit: 'mEq/L', category: 'Electrolytes', name: 'Sodium' },
+      'Potassium': { min: 3.5, max: 5.8, unit: 'mEq/L', category: 'Electrolytes', name: 'Potassium' },
+      'Chloride': { min: 109, max: 122, unit: 'mEq/L', category: 'Electrolytes', name: 'Chloride' },
+      'Calcium': { min: 7.9, max: 12.0, unit: 'mg/dL', category: 'Electrolytes', name: 'Calcium' },
+      // CBC
+      'WBC': { min: 5.5, max: 16.9, unit: 'K/µL', category: 'CBC', name: 'White Blood Cells' },
+      'RBC': { min: 5.5, max: 8.5, unit: 'M/µL', category: 'CBC', name: 'Red Blood Cells' },
+      'HCT': { min: 37, max: 55, unit: '%', category: 'CBC', name: 'Hematocrit' },
+      'Hemoglobin': { min: 12, max: 18, unit: 'g/dL', category: 'CBC', name: 'Hemoglobin' },
+      'Platelets': { min: 175, max: 500, unit: 'K/µL', category: 'CBC', name: 'Platelets' },
+      'MCV': { min: 60, max: 77, unit: 'fL', category: 'CBC', name: 'MCV' },
+      'MCH': { min: 19.5, max: 24.5, unit: 'pg', category: 'CBC', name: 'MCH' },
+      'MCHC': { min: 31, max: 36, unit: 'g/dL', category: 'CBC', name: 'MCHC' },
+      // Thyroid
+      'T4': { min: 1.0, max: 4.0, unit: 'µg/dL', category: 'Thyroid', name: 'Total T4' },
+      'Free T4': { min: 0.6, max: 2.5, unit: 'ng/dL', category: 'Thyroid', name: 'Free T4' },
+      'TSH': { min: 0.03, max: 0.5, unit: 'ng/mL', category: 'Thyroid', name: 'TSH' },
+      // Pancreas
+      'Lipase': { min: 0, max: 200, unit: 'U/L', category: 'Pancreas', name: 'Lipase' },
+      'Amylase': { min: 500, max: 1500, unit: 'U/L', category: 'Pancreas', name: 'Amylase' },
+      'cPLI': { min: 0, max: 200, unit: 'µg/L', category: 'Pancreas', name: 'Canine Pancreatic Lipase' },
+    };
+    
+    // Build trends by test name
+    const trends = {};
+    
+    for (const lab of labs) {
+      const results = JSON.parse(lab.results || '[]');
+      const date = lab.collection_date;
+      
+      for (const result of results) {
+        const testName = result.test || result.name;
+        if (!testName) continue;
+        
+        // Normalize test name
+        const normalizedName = normalizeTestName(testName);
+        const value = parseFloat(result.value);
+        if (isNaN(value)) continue;
+        
+        if (!trends[normalizedName]) {
+          const ref = referenceRanges[normalizedName] || {};
+          trends[normalizedName] = {
+            name: ref.name || normalizedName,
+            category: ref.category || 'Other',
+            unit: result.unit || ref.unit || '',
+            referenceRange: ref.min !== undefined ? { min: ref.min, max: ref.max } : null,
+            dataPoints: []
+          };
+        }
+        
+        const ref = trends[normalizedName].referenceRange;
+        let flag = null;
+        if (ref) {
+          if (value < ref.min) flag = 'low';
+          else if (value > ref.max) flag = 'high';
+        }
+        
+        trends[normalizedName].dataPoints.push({
+          date,
+          value,
+          flag,
+          panelName: lab.panel_name,
+          facility: lab.facility_name
+        });
+      }
+    }
+    
+    // Convert to array and sort by category
+    const trendArray = Object.values(trends)
+      .filter(t => t.dataPoints.length >= 1)
+      .sort((a, b) => {
+        const categoryOrder = ['Kidney', 'Liver', 'Metabolic', 'CBC', 'Thyroid', 'Electrolytes', 'Pancreas', 'Protein', 'Other'];
+        return categoryOrder.indexOf(a.category) - categoryOrder.indexOf(b.category);
+      });
+    
+    res.json({
+      trends: trendArray,
+      totalTests: trendArray.length,
+      totalDataPoints: trendArray.reduce((sum, t) => sum + t.dataPoints.length, 0),
+      dateRange: labs.length > 0 ? {
+        earliest: labs[0].collection_date,
+        latest: labs[labs.length - 1].collection_date
+      } : null
+    });
+    
+  } catch (error) {
+    console.error('Lab trends error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Helper to normalize test names
+function normalizeTestName(name) {
+  const mappings = {
+    'blood urea nitrogen': 'BUN',
+    'urea nitrogen': 'BUN',
+    'creat': 'Creatinine',
+    'creatinine': 'Creatinine',
+    'alanine aminotransferase': 'ALT',
+    'alt (sgpt)': 'ALT',
+    'sgpt': 'ALT',
+    'alkaline phosphatase': 'ALP',
+    'alk phos': 'ALP',
+    'aspartate aminotransferase': 'AST',
+    'ast (sgot)': 'AST',
+    'sgot': 'AST',
+    'total bilirubin': 'Bilirubin',
+    'tbil': 'Bilirubin',
+    'alb': 'Albumin',
+    'glu': 'Glucose',
+    'chol': 'Cholesterol',
+    'trig': 'Triglycerides',
+    'tp': 'Total Protein',
+    'total protein': 'Total Protein',
+    'glob': 'Globulin',
+    'na': 'Sodium',
+    'k': 'Potassium',
+    'cl': 'Chloride',
+    'ca': 'Calcium',
+    'phos': 'Phosphorus',
+    'wbc': 'WBC',
+    'rbc': 'RBC',
+    'hct': 'HCT',
+    'hematocrit': 'HCT',
+    'hgb': 'Hemoglobin',
+    'hemoglobin': 'Hemoglobin',
+    'plt': 'Platelets',
+    'platelets': 'Platelets',
+    't4': 'T4',
+    'total t4': 'T4',
+    'thyroxine': 'T4',
+    'free t4': 'Free T4',
+    'ft4': 'Free T4',
+    'tsh': 'TSH',
+    'spec cpl': 'cPLI',
+    'cpli': 'cPLI',
+  };
+  
+  const lower = name.toLowerCase().trim();
+  return mappings[lower] || name;
+}
+
 // ================== ALLERGIES & CONDITIONS ==================
 
 app.post('/api/pets/:id/allergies', auth, async (req, res) => {
@@ -1049,12 +1219,26 @@ app.post('/api/pets/:id/export/insurance-claim/pdf', auth, async (req, res) => {
     // Generate PDF
     const doc = new PDFDocument({ margin: 50 });
     const chunks = [];
+    
     doc.on('data', chunk => chunks.push(chunk));
+    doc.on('error', err => {
+      console.error('PDF generation error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'PDF generation failed: ' + err.message });
+      }
+    });
     doc.on('end', () => {
-      const pdfBuffer = Buffer.concat(chunks);
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="${pet.name}-insurance-claim-${new Date().toISOString().split('T')[0]}.pdf"`);
-      res.send(pdfBuffer);
+      try {
+        const pdfBuffer = Buffer.concat(chunks);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${pet.name}-insurance-claim-${new Date().toISOString().split('T')[0]}.pdf"`);
+        res.send(pdfBuffer);
+      } catch (err) {
+        console.error('PDF send error:', err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: err.message });
+        }
+      }
     });
     
     // Header
@@ -1190,12 +1374,26 @@ app.post('/api/pets/:id/export/referral-summary/pdf', auth, async (req, res) => 
     
     const doc = new PDFDocument({ margin: 50 });
     const chunks = [];
+    
     doc.on('data', chunk => chunks.push(chunk));
+    doc.on('error', err => {
+      console.error('PDF generation error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'PDF generation failed: ' + err.message });
+      }
+    });
     doc.on('end', () => {
-      const pdfBuffer = Buffer.concat(chunks);
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="${pet.name}-referral-summary-${new Date().toISOString().split('T')[0]}.pdf"`);
-      res.send(pdfBuffer);
+      try {
+        const pdfBuffer = Buffer.concat(chunks);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${pet.name}-referral-summary-${new Date().toISOString().split('T')[0]}.pdf"`);
+        res.send(pdfBuffer);
+      } catch (err) {
+        console.error('PDF send error:', err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: err.message });
+        }
+      }
     });
     
     // Header
@@ -1206,10 +1404,12 @@ app.post('/api/pets/:id/export/referral-summary/pdf', auth, async (req, res) => 
     
     // Urgency banner if urgent
     if (urgency === 'urgent' || urgency === 'emergency') {
-      doc.rect(50, doc.y, 500, 25).fill(urgency === 'emergency' ? '#dc2626' : '#f59e0b');
-      doc.fill('#ffffff').fontSize(12).font('Helvetica-Bold').text(`URGENCY: ${urgency.toUpperCase()}`, 60, doc.y - 20);
-      doc.fill('#000000');
-      doc.moveDown();
+      const bannerColor = urgency === 'emergency' ? '#dc2626' : '#f59e0b';
+      doc.rect(50, doc.y, 500, 25).fill(bannerColor);
+      doc.fillColor('#ffffff').fontSize(12).font('Helvetica-Bold');
+      doc.text(`URGENCY: ${urgency.toUpperCase()}`, 60, doc.y - 18, { width: 480 });
+      doc.fillColor('#000000');
+      doc.moveDown(0.5);
     }
     
     doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
@@ -1251,7 +1451,7 @@ app.post('/api/pets/:id/export/referral-summary/pdf', auth, async (req, res) => 
       doc.text('NKDA (No Known Drug Allergies)');
     } else {
       doc.fillColor('#dc2626');
-      allergies.forEach(a => doc.text(`⚠ ${a.allergen}: ${a.reaction || 'unknown'} (${a.severity || 'unknown severity'})`));
+      allergies.forEach(a => doc.text(`! ${a.allergen}: ${a.reaction || 'unknown'} (${a.severity || 'unknown severity'})`));
       doc.fillColor('#000000');
     }
     doc.moveDown();
