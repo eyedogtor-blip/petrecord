@@ -1022,7 +1022,7 @@
         setLoading(true);
         try {
           console.log('Downloading insurance PDF for pet:', pet.id);
-          const token = localStorage.getItem('token');
+          const token = localStorage.getItem('petrecord_token');
           if (!token) throw new Error('Not logged in');
           
           const response = await fetch(`/api/pets/${pet.id}/export/insurance-claim/pdf`, {
@@ -1177,7 +1177,7 @@
         setLoading(true);
         try {
           console.log('Downloading referral PDF for pet:', pet.id);
-          const token = localStorage.getItem('token');
+          const token = localStorage.getItem('petrecord_token');
           if (!token) throw new Error('Not logged in');
           
           const response = await fetch(`/api/pets/${pet.id}/export/referral-summary/pdf`, {
