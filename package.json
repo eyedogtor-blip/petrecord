@@ -1,6 +1,6 @@
 {
   "name": "petrecord",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Pet health record platform with AI document extraction, voice transcription, and PostgreSQL",
   "main": "server.js",
   "scripts": {
@@ -16,7 +16,7 @@
     "multer": "^1.4.5-lts.1",
     "qrcode": "^1.5.4",
     "uuid": "^10.0.0",
-    "form-data": "^4.0.0"
+    "openai": "^4.52.0"
   },
   "engines": {
     "node": ">=18"
