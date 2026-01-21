@@ -510,14 +510,20 @@ app.post('/api/pets/:id/recordings', auth, upload.single('audio'), async (req, r
     
     // Transcribe with Whisper
     const formData = new FormData();
-    formData.append('file', req.file.buffer, { filename: 'recording.webm', contentType: req.file.mimetype });
+    formData.append('file', req.file.buffer, {
+      filename: 'recording.webm',
+      contentType: req.file.mimetype || 'audio/webm',
+      knownLength: req.file.buffer.length
+    });
     formData.append('model', 'whisper-1');
-    formData.append('language', 'en');
     
     const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, ...formData.getHeaders() },
-      body: formData
+      headers: { 
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        ...formData.getHeaders()
+      },
+      body: formData.getBuffer()
     });
     
     if (!whisperRes.ok) throw new Error(`Transcription failed: ${await whisperRes.text()}`);
