@@ -66,6 +66,7 @@
       Download: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
       Mail: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>,
       Copy: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>,
+      FileText: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
       Mic: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8" strokeLinecap="round" strokeLinejoin="round"/></svg>,
       MicOff: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 1l22 22M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6"/><path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23M12 19v4M8 23h8" strokeLinecap="round" strokeLinejoin="round"/></svg>,
       Play: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
@@ -579,6 +580,8 @@
       const [showRecord, setShowRecord] = useState(false);
       const [selectedDoc, setSelectedDoc] = useState(null);
       const [selectedRecording, setSelectedRecording] = useState(null);
+      const [showInsuranceExport, setShowInsuranceExport] = useState(false);
+      const [showReferralExport, setShowReferralExport] = useState(false);
 
       const refreshPet = () => { 
         api.get(`/api/pets/${pet.id}`).then(setPet); 
@@ -610,9 +613,11 @@
                     </div>
                   </div>
                 </div>
-                <div className="flex gap-3">
-                  <button onClick={() => setShowRecord(true)} className="flex-1 lg:flex-none px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center justify-center gap-2 font-medium"><Icons.Mic className="w-4 h-4" /> Record Exam</button>
-                  <button onClick={() => setShowUpload(true)} className="flex-1 lg:flex-none px-4 py-2.5 bg-accent-600 text-white rounded-lg hover:bg-accent-700 flex items-center justify-center gap-2 font-medium"><Icons.Upload className="w-4 h-4" /> Upload Record</button>
+                <div className="flex flex-wrap gap-3">
+                  <button onClick={() => setShowRecord(true)} className="flex-1 lg:flex-none px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center justify-center gap-2 font-medium"><Icons.Mic className="w-4 h-4" /> Record</button>
+                  <button onClick={() => setShowUpload(true)} className="flex-1 lg:flex-none px-4 py-2.5 bg-accent-600 text-white rounded-lg hover:bg-accent-700 flex items-center justify-center gap-2 font-medium"><Icons.Upload className="w-4 h-4" /> Upload</button>
+                  <button onClick={() => setShowInsuranceExport(true)} className="flex-1 lg:flex-none px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2 font-medium"><Icons.FileText className="w-4 h-4" /> Insurance</button>
+                  <button onClick={() => setShowReferralExport(true)} className="flex-1 lg:flex-none px-4 py-2.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 flex items-center justify-center gap-2 font-medium"><Icons.FileText className="w-4 h-4" /> Referral</button>
                   <button onClick={() => setShowShare(true)} className="flex-1 lg:flex-none px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 flex items-center justify-center gap-2 font-medium"><Icons.Share className="w-4 h-4" /> Share</button>
                 </div>
               </div>
@@ -797,6 +802,310 @@
           {showRecord && <RecordModal pet={pet} onClose={() => setShowRecord(false)} onSuccess={refreshPet} />}
           {selectedDoc && <DocumentDetailModal doc={selectedDoc} onClose={() => setSelectedDoc(null)} />}
           {selectedRecording && <RecordingDetailModal recording={selectedRecording} onClose={() => setSelectedRecording(null)} />}
+          {showInsuranceExport && <InsuranceExportModal pet={pet} onClose={() => setShowInsuranceExport(false)} />}
+          {showReferralExport && <ReferralExportModal pet={pet} onClose={() => setShowReferralExport(false)} />}
+        </div>
+      );
+    }
+
+    // Insurance Export Modal
+    function InsuranceExportModal({ pet, onClose }) {
+      const [loading, setLoading] = useState(false);
+      const [form, setForm] = useState({
+        startDate: '',
+        endDate: '',
+        claimReason: '',
+        insuranceCompany: '',
+        policyNumber: ''
+      });
+
+      const insuranceCompanies = [
+        'Trupanion', 'Nationwide', 'Healthy Paws', 'Embrace', 'Petplan',
+        'ASPCA', 'Lemonade', 'Pets Best', 'Figo', 'Spot', 'Other'
+      ];
+
+      const downloadPdf = async () => {
+        setLoading(true);
+        try {
+          const response = await fetch(`/api/pets/${pet.id}/export/insurance-claim/pdf`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(form)
+          });
+          
+          if (!response.ok) throw new Error('Failed to generate PDF');
+          
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${pet.name}-insurance-claim-${new Date().toISOString().split('T')[0]}.pdf`;
+          a.click();
+          URL.revokeObjectURL(url);
+          onClose();
+        } catch (err) {
+          alert('Error: ' + err.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Insurance Claim Export</h2>
+                <p className="text-sm text-slate-500">Generate a PDF for insurance claims</p>
+              </div>
+              <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><Icons.X /></button>
+            </div>
+            
+            <div className="p-5 space-y-4">
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-blue-800 text-sm">
+                  <strong>Generating for: {pet.name}</strong><br />
+                  This will create a formatted PDF with medical history, diagnoses, treatments, and medications for your insurance claim.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Insurance Company</label>
+                <select 
+                  value={form.insuranceCompany} 
+                  onChange={e => setForm({...form, insuranceCompany: e.target.value})}
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select company...</option>
+                  {insuranceCompanies.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Policy Number</label>
+                <input 
+                  type="text" 
+                  value={form.policyNumber}
+                  onChange={e => setForm({...form, policyNumber: e.target.value})}
+                  placeholder="e.g., PET-123456"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Claim Start Date</label>
+                  <input 
+                    type="date" 
+                    value={form.startDate}
+                    onChange={e => setForm({...form, startDate: e.target.value})}
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Claim End Date</label>
+                  <input 
+                    type="date" 
+                    value={form.endDate}
+                    onChange={e => setForm({...form, endDate: e.target.value})}
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Reason for Claim</label>
+                <textarea 
+                  value={form.claimReason}
+                  onChange={e => setForm({...form, claimReason: e.target.value})}
+                  placeholder="e.g., Emergency surgery for foreign body removal"
+                  rows={3}
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-amber-800 text-sm">
+                  <strong>Tip:</strong> Leave date fields empty to include all records. Most insurance claims require records from the specific treatment period.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-5 border-t border-slate-200 flex gap-3">
+              <button onClick={onClose} className="flex-1 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 font-medium">Cancel</button>
+              <button 
+                onClick={downloadPdf} 
+                disabled={loading}
+                className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2"
+              >
+                {loading ? 'Generating...' : <><Icons.Download className="w-4 h-4" /> Download PDF</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Referral Export Modal
+    function ReferralExportModal({ pet, onClose }) {
+      const [loading, setLoading] = useState(false);
+      const [form, setForm] = useState({
+        referralReason: '',
+        referringVet: '',
+        referringClinic: '',
+        specialtyType: '',
+        urgency: 'routine',
+        additionalNotes: ''
+      });
+
+      const specialties = [
+        'Internal Medicine', 'Surgery', 'Oncology', 'Cardiology', 'Dermatology',
+        'Neurology', 'Ophthalmology', 'Orthopedics', 'Emergency/Critical Care',
+        'Radiology/Imaging', 'Dentistry', 'Behavior', 'Nutrition', 'Other'
+      ];
+
+      const downloadPdf = async () => {
+        setLoading(true);
+        try {
+          const response = await fetch(`/api/pets/${pet.id}/export/referral-summary/pdf`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(form)
+          });
+          
+          if (!response.ok) throw new Error('Failed to generate PDF');
+          
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${pet.name}-referral-summary-${new Date().toISOString().split('T')[0]}.pdf`;
+          a.click();
+          URL.revokeObjectURL(url);
+          onClose();
+        } catch (err) {
+          alert('Error: ' + err.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Referral Summary Export</h2>
+                <p className="text-sm text-slate-500">Generate a professional referral packet</p>
+              </div>
+              <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><Icons.X /></button>
+            </div>
+            
+            <div className="p-5 space-y-4">
+              <div className="p-4 bg-violet-50 border border-violet-200 rounded-lg">
+                <p className="text-violet-800 text-sm">
+                  <strong>Patient: {pet.name}</strong><br />
+                  Creates a comprehensive referral summary including signalment, medical history, current medications, allergies, and recent diagnostics.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Specialty Type *</label>
+                <select 
+                  value={form.specialtyType} 
+                  onChange={e => setForm({...form, specialtyType: e.target.value})}
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500"
+                >
+                  <option value="">Select specialty...</option>
+                  {specialties.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Reason for Referral *</label>
+                <textarea 
+                  value={form.referralReason}
+                  onChange={e => setForm({...form, referralReason: e.target.value})}
+                  placeholder="e.g., Persistent lameness in right forelimb, suspect cruciate ligament injury. Requesting orthopedic evaluation."
+                  rows={3}
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Urgency</label>
+                <div className="flex gap-3">
+                  {['routine', 'urgent', 'emergency'].map(u => (
+                    <button
+                      key={u}
+                      type="button"
+                      onClick={() => setForm({...form, urgency: u})}
+                      className={`flex-1 px-4 py-2 rounded-lg border-2 font-medium capitalize transition-colors ${
+                        form.urgency === u 
+                          ? u === 'emergency' ? 'border-red-500 bg-red-50 text-red-700'
+                            : u === 'urgent' ? 'border-amber-500 bg-amber-50 text-amber-700'
+                            : 'border-green-500 bg-green-50 text-green-700'
+                          : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      {u}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Referring Veterinarian</label>
+                  <input 
+                    type="text" 
+                    value={form.referringVet}
+                    onChange={e => setForm({...form, referringVet: e.target.value})}
+                    placeholder="Dr. Jane Smith"
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Referring Clinic</label>
+                  <input 
+                    type="text" 
+                    value={form.referringClinic}
+                    onChange={e => setForm({...form, referringClinic: e.target.value})}
+                    placeholder="Happy Paws Veterinary"
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Additional Notes for Specialist</label>
+                <textarea 
+                  value={form.additionalNotes}
+                  onChange={e => setForm({...form, additionalNotes: e.target.value})}
+                  placeholder="Any specific concerns or questions for the specialist..."
+                  rows={2}
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500"
+                />
+              </div>
+            </div>
+
+            <div className="p-5 border-t border-slate-200 flex gap-3">
+              <button onClick={onClose} className="flex-1 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 font-medium">Cancel</button>
+              <button 
+                onClick={downloadPdf} 
+                disabled={loading || !form.specialtyType || !form.referralReason}
+                className="flex-1 px-4 py-2.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2"
+              >
+                {loading ? 'Generating...' : <><Icons.Download className="w-4 h-4" /> Download PDF</>}
+              </button>
+            </div>
+          </div>
         </div>
       );
     }
