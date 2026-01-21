@@ -92,6 +92,11 @@ async function initDb() {
       );
     `);
     
+    // Add new columns to existing tables (safe to run multiple times)
+    try {
+      await client.query("ALTER TABLE pets ADD COLUMN IF NOT EXISTS photo_data TEXT");
+    } catch (e) { /* column might already exist */ }
+    
     // Seed demo data
     const existing = await client.query("SELECT id FROM users WHERE email = 'demo@petrecord.com'");
     if (existing.rows.length === 0) {
@@ -472,7 +477,8 @@ app.get('/api/pets/:id/images', auth, async (req, res) => {
     const pet = await queryOne("SELECT id FROM pets WHERE id = $1 AND owner_id = $2", [req.params.id, req.userId]);
     if (!pet) return res.status(404).json({ error: 'Pet not found' });
     
-    const images = await query("SELECT id, filename, image_type, modality, body_part, description, study_date, uploaded_at FROM medical_images WHERE pet_id = $1 ORDER BY study_date DESC", [req.params.id]);
+    // Include image_data for thumbnail display
+    const images = await query("SELECT id, filename, image_type, modality, body_part, description, study_date, uploaded_at, image_data FROM medical_images WHERE pet_id = $1 ORDER BY study_date DESC", [req.params.id]);
     res.json(images);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1097,11 +1103,26 @@ app.get('/api/share/validate/:token', async (req, res) => {
 
 app.post('/api/share/access/:token', async (req, res) => {
   try {
+    console.log('Share access requested for token:', req.params.token);
+    
     const token = await queryOne("SELECT * FROM access_tokens WHERE token = $1", [req.params.token]);
-    if (!token || !token.is_active) return res.status(404).json({ error: 'Invalid share link' });
-    if (token.valid_until && new Date(token.valid_until) < new Date()) return res.status(403).json({ error: 'This share link has expired' });
+    if (!token || !token.is_active) {
+      console.log('Invalid or inactive token');
+      return res.status(404).json({ error: 'Invalid share link' });
+    }
+    if (token.valid_until && new Date(token.valid_until) < new Date()) {
+      console.log('Token expired:', token.valid_until);
+      return res.status(403).json({ error: 'This share link has expired' });
+    }
     
     const pet = await queryOne("SELECT * FROM pets WHERE id = $1", [token.pet_id]);
+    if (!pet) {
+      console.log('Pet not found for token');
+      return res.status(404).json({ error: 'Pet not found' });
+    }
+    
+    console.log('Loading data for pet:', pet.name);
+    
     const allergies = await query("SELECT * FROM allergies WHERE pet_id = $1", [token.pet_id]);
     const conditions = await query("SELECT * FROM conditions WHERE pet_id = $1", [token.pet_id]);
     const medications = await query("SELECT * FROM medications WHERE pet_id = $1", [token.pet_id]);
@@ -1124,6 +1145,8 @@ app.post('/api/share/access/:token', async (req, res) => {
       else age = `${years} years`;
     }
     
+    console.log('Sending share data');
+    
     res.json({
       pet: {
         name: pet.name,
@@ -1133,7 +1156,8 @@ app.post('/api/share/access/:token', async (req, res) => {
         dateOfBirth: pet.date_of_birth,
         age,
         weightKg: pet.weight_kg,
-        microchipId: pet.microchip_id
+        microchipId: pet.microchip_id,
+        photoData: pet.photo_data
       },
       allergies,
       conditions,
@@ -1151,6 +1175,7 @@ app.post('/api/share/access/:token', async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('Share access error:', error);
     res.status(500).json({ error: error.message });
   }
 });
