@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PetRecord - Shared Health Record</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: { 50: '#f0fdfa', 100: '#ccfbf1', 200: '#99f6e4', 300: '#5eead4', 400: '#2dd4bf', 500: '#14b8a6', 600: '#0d9488', 700: '#0f766e', 800: '#115e59', 900: '#134e4a' },
+            accent: { 50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0', 300: '#6ee7b7', 400: '#34d399', 500: '#10b981', 600: '#059669', 700: '#047857', 800: '#065f46', 900: '#064e3b' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .allergy-alert { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+  <div id="app"></div>
+  
+  <script>
+    const token = window.location.pathname.split('/share/')[1];
+    
+    async function loadData() {
+      const app = document.getElementById('app');
+      
+      try {
+        // Validate first
+        const validateRes = await fetch(`/api/share/validate/${token}`);
+        if (!validateRes.ok) {
+          const err = await validateRes.json();
+          app.innerHTML = renderError(err.error || 'Invalid or expired share link');
+          return;
+        }
+        
+        // Get full data
+        const dataRes = await fetch(`/api/share/access/${token}`, { method: 'POST' });
+        if (!dataRes.ok) {
+          const err = await dataRes.json();
+          app.innerHTML = renderError(err.error || 'Unable to load records');
+          return;
+        }
+        
+        const data = await dataRes.json();
+        app.innerHTML = renderRecord(data);
+        
+      } catch (error) {
+        app.innerHTML = renderError('Unable to connect. Please try again.');
+      }
+    }
+    
+    function renderError(message) {
+      return `
+        <div class="min-h-screen flex items-center justify-center p-4">
+          <div class="bg-white rounded-2xl shadow-xl p-8 max-w-md text-center">
+            <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            </div>
+            <h1 class="text-xl font-bold text-slate-900 mb-2">Access Denied</h1>
+            <p class="text-slate-600">${message}</p>
+          </div>
+        </div>
+      `;
+    }
+    
+    function formatDate(dateStr) {
+      if (!dateStr) return '—';
+      return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+    
+    function timeRemaining(expiresAt) {
+      if (!expiresAt) return 'No expiration';
+      const now = new Date();
+      const expires = new Date(expiresAt);
+      const diff = expires - now;
+      if (diff <= 0) return 'Expired';
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      if (hours >= 24) return `${Math.floor(hours / 24)} days remaining`;
+      if (hours > 0) return `${hours}h ${minutes}m remaining`;
+      return `${minutes} minutes remaining`;
+    }
+    
+    function speciesIcon(species) {
+      if (species === 'DOG') return `<svg class="w-8 h-8" viewBox="0 0 24 24" fill="currentColor"><path d="M18 4c-1 0-2 1-2 1l-1 2-2-1c-1-1-3-1-4 0L7 7l-1-2s-1-1-2-1-2 1-2 2c0 2 1 3 2 4l1 1v8c0 1 1 2 2 2h10c1 0 2-1 2-2v-8l1-1c1-1 2-2 2-4 0-1-1-2-2-2z"/></svg>`;
+      if (species === 'CAT') return `<svg class="w-8 h-8" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C9 2 7 4 7 4L6 8l2 2-1 4 2 1v6h2v-3h2v3h2v-6l2-1-1-4 2-2-1-4s-2-2-5-2z"/></svg>`;
+      return `<svg class="w-8 h-8" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>`;
+    }
+    
+    function renderRecord(data) {
+      const { pet, allergies, conditions, medications, activeMedications, vaccinations, medicalRecords, labResults, weightHistory, documents, recordings, shareInfo } = data;
+      
+      return `
+        <div class="max-w-4xl mx-auto p-4 py-8">
+          <!-- Header Banner -->
+          <div class="bg-gradient-to-r from-primary-600 to-accent-600 rounded-2xl p-6 mb-6 text-white shadow-lg">
+            <div class="flex items-center justify-between flex-wrap gap-4">
+              <div class="flex items-center gap-4">
+                <div class="p-3 bg-white/20 rounded-xl backdrop-blur">
+                  ${speciesIcon(pet.species)}
+                </div>
+                <div>
+                  <h1 class="text-3xl font-bold">${pet.name}</h1>
+                  <p class="opacity-90">${pet.breed || pet.species} · ${pet.sex?.replace(/_/g, ' ') || 'Unknown'} · ${pet.age || 'Age unknown'}</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <div class="text-sm opacity-75">Shared Health Record</div>
+                <div class="text-sm font-medium bg-white/20 px-3 py-1 rounded-full mt-1">${timeRemaining(shareInfo.expiresAt)}</div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Critical Info Row -->
+          <div class="grid md:grid-cols-2 gap-4 mb-6">
+            <!-- Allergies -->
+            <div class="${allergies.length > 0 ? 'bg-red-50 border-red-200 allergy-alert' : 'bg-white border-slate-200'} rounded-xl border-2 p-5">
+              <h2 class="font-bold ${allergies.length > 0 ? 'text-red-800' : 'text-slate-900'} mb-3 flex items-center gap-2">
+                <svg class="w-5 h-5 ${allergies.length > 0 ? 'text-red-600' : 'text-slate-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                ALLERGIES
+              </h2>
+              ${allergies.length === 0 
+                ? '<p class="text-slate-500 text-sm">No known allergies (NKDA)</p>'
+                : allergies.map(a => `
+                  <div class="flex items-center justify-between py-2 border-b border-red-100 last:border-0">
+                    <span class="font-semibold text-red-800">${a.allergen}</span>
+                    <div class="text-right">
+                      <span class="text-red-700 text-sm">${a.reaction || 'Unknown reaction'}</span>
+                      ${a.severity ? `<span class="ml-2 px-2 py-0.5 bg-red-200 text-red-800 text-xs rounded-full font-medium">${a.severity}</span>` : ''}
+                    </div>
+                  </div>
+                `).join('')
+              }
+            </div>
+            
+            <!-- Patient Details -->
+            <div class="bg-white rounded-xl border border-slate-200 p-5">
+              <h2 class="font-bold text-slate-900 mb-3">Patient Details</h2>
+              <div class="grid grid-cols-2 gap-3 text-sm">
+                <div><span class="text-slate-500">Species:</span> <span class="font-medium">${pet.species === 'DOG' ? 'Canine' : pet.species === 'CAT' ? 'Feline' : pet.species}</span></div>
+                <div><span class="text-slate-500">Breed:</span> <span class="font-medium">${pet.breed || 'Unknown'}</span></div>
+                <div><span class="text-slate-500">Sex:</span> <span class="font-medium">${pet.sex?.replace(/_/g, ' ') || 'Unknown'}</span></div>
+                <div><span class="text-slate-500">Age:</span> <span class="font-medium">${pet.age || 'Unknown'}</span></div>
+                <div><span class="text-slate-500">Weight:</span> <span class="font-medium">${pet.weightKg ? pet.weightKg + ' kg' : 'Unknown'}</span></div>
+                <div><span class="text-slate-500">Microchip:</span> <span class="font-medium">${pet.microchipId || 'None'}</span></div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Active Medications -->
+          <div class="bg-white rounded-xl border border-slate-200 p-5 mb-6">
+            <h2 class="font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <svg class="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+              Current Medications
+            </h2>
+            ${activeMedications.length === 0 
+              ? '<p class="text-slate-500 text-sm">No active medications</p>'
+              : `<div class="grid md:grid-cols-2 gap-3">
+                  ${activeMedications.map(m => `
+                    <div class="bg-slate-50 rounded-lg p-3">
+                      <div class="font-semibold text-slate-900">${m.drug_name}</div>
+                      <div class="text-sm text-slate-600">${m.dose || ''} ${m.frequency || ''}</div>
+                      ${m.indication ? `<div class="text-xs text-slate-500 mt-1">For: ${m.indication}</div>` : ''}
+                    </div>
+                  `).join('')}
+                </div>`
+            }
+          </div>
+          
+          <!-- Conditions -->
+          <div class="bg-white rounded-xl border border-slate-200 p-5 mb-6">
+            <h2 class="font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <svg class="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+              Medical Conditions
+            </h2>
+            ${conditions.length === 0 
+              ? '<p class="text-slate-500 text-sm">No chronic conditions on record</p>'
+              : `<div class="flex flex-wrap gap-2">
+                  ${conditions.map(c => `
+                    <span class="px-3 py-1.5 rounded-full text-sm font-medium ${c.status === 'active' ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'}">
+                      ${c.condition} <span class="opacity-70">(${c.status})</span>
+                    </span>
+                  `).join('')}
+                </div>`
+            }
+          </div>
+          
+          <!-- Vaccinations -->
+          <div class="bg-white rounded-xl border border-slate-200 p-5 mb-6">
+            <h2 class="font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <svg class="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+              Vaccination Status
+            </h2>
+            ${vaccinations.length === 0 
+              ? '<p class="text-slate-500 text-sm">No vaccination records</p>'
+              : `<div class="overflow-x-auto">
+                  <table class="w-full text-sm">
+                    <thead class="bg-slate-50">
+                      <tr>
+                        <th class="text-left p-3 font-medium text-slate-600">Vaccine</th>
+                        <th class="text-left p-3 font-medium text-slate-600">Date Given</th>
+                        <th class="text-left p-3 font-medium text-slate-600">Valid Until</th>
+                        <th class="text-left p-3 font-medium text-slate-600">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                      ${vaccinations.map(v => {
+                        const expired = v.valid_until && new Date(v.valid_until) < new Date();
+                        return `
+                          <tr>
+                            <td class="p-3 font-medium text-slate-900">${v.vaccine_name}</td>
+                            <td class="p-3 text-slate-600">${formatDate(v.administration_date)}</td>
+                            <td class="p-3 text-slate-600">${formatDate(v.valid_until) || '—'}</td>
+                            <td class="p-3">
+                              <span class="px-2 py-1 rounded-full text-xs font-medium ${expired ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}">
+                                ${expired ? 'Expired' : 'Current'}
+                              </span>
+                            </td>
+                          </tr>
+                        `;
+                      }).join('')}
+                    </tbody>
+                  </table>
+                </div>`
+            }
+          </div>
+          
+          <!-- Medical History -->
+          <div class="bg-white rounded-xl border border-slate-200 p-5 mb-6">
+            <h2 class="font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <svg class="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+              Medical History
+            </h2>
+            ${medicalRecords.length === 0 
+              ? '<p class="text-slate-500 text-sm">No medical records on file</p>'
+              : `<div class="space-y-4">
+                  ${medicalRecords.slice(0, 10).map(r => `
+                    <div class="border-l-4 border-primary-400 pl-4 py-2">
+                      <div class="flex items-center gap-3 mb-1">
+                        <span class="font-semibold text-slate-900">${formatDate(r.date_of_service)}</span>
+                        <span class="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded-full">${r.record_type || 'Visit'}</span>
+                      </div>
+                      ${r.facility_name ? `<p class="text-sm text-slate-500">${r.facility_name}${r.provider_name ? ' • ' + r.provider_name : ''}</p>` : ''}
+                      ${r.chief_complaint ? `<p class="text-sm mt-1"><span class="font-medium">Concern:</span> ${r.chief_complaint}</p>` : ''}
+                      ${r.diagnosis ? `<p class="text-sm text-amber-700"><span class="font-medium">Diagnosis:</span> ${r.diagnosis}</p>` : ''}
+                      ${r.treatment ? `<p class="text-sm text-green-700"><span class="font-medium">Treatment:</span> ${r.treatment}</p>` : ''}
+                      ${r.summary ? `<p class="text-sm text-slate-600 mt-1">${r.summary}</p>` : ''}
+                    </div>
+                  `).join('')}
+                  ${medicalRecords.length > 10 ? `<p class="text-sm text-slate-500 text-center">+ ${medicalRecords.length - 10} more records</p>` : ''}
+                </div>`
+            }
+          </div>
+          
+          <!-- Lab Results -->
+          ${labResults.length > 0 ? `
+            <div class="bg-white rounded-xl border border-slate-200 p-5 mb-6">
+              <h2 class="font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+                Laboratory Results
+              </h2>
+              <div class="space-y-4">
+                ${labResults.slice(0, 5).map(lab => `
+                  <div class="bg-slate-50 rounded-lg p-4">
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="font-semibold text-slate-900">${lab.panel_name}</span>
+                      <span class="text-sm text-slate-500">${formatDate(lab.collection_date)}</span>
+                    </div>
+                    ${lab.interpretation ? `<p class="text-sm text-slate-600 mb-2">${lab.interpretation}</p>` : ''}
+                    ${lab.results && lab.results.length > 0 ? `
+                      <div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                        ${lab.results.slice(0, 9).map(r => `
+                          <div class="bg-white rounded px-2 py-1">
+                            <span class="text-slate-500">${r.test}:</span>
+                            <span class="font-medium ${r.flag === 'high' || r.flag === 'H' ? 'text-red-600' : r.flag === 'low' || r.flag === 'L' ? 'text-blue-600' : 'text-slate-900'}">${r.value}</span>
+                            ${r.unit ? `<span class="text-slate-400 text-xs">${r.unit}</span>` : ''}
+                          </div>
+                        `).join('')}
+                      </div>
+                    ` : ''}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+          
+          <!-- Exam Recordings -->
+          ${recordings.length > 0 ? `
+            <div class="bg-white rounded-xl border border-slate-200 p-5 mb-6">
+              <h2 class="font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
+                Exam Recordings & Notes
+              </h2>
+              <div class="space-y-3">
+                ${recordings.map(r => `
+                  <div class="bg-slate-50 rounded-lg p-4">
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="font-semibold text-slate-900">${r.title || 'Exam Recording'}</span>
+                      <span class="text-sm text-slate-500">${formatDate(r.recorded_at)}</span>
+                    </div>
+                    ${r.summary ? `<p class="text-sm text-slate-700 mb-2"><span class="font-medium">Summary:</span> ${r.summary}</p>` : ''}
+                    ${r.transcript ? `<details class="text-sm"><summary class="cursor-pointer text-primary-600 font-medium">View transcript</summary><p class="mt-2 text-slate-600 bg-white p-3 rounded">${r.transcript}</p></details>` : ''}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+          
+          <!-- Footer -->
+          <div class="text-center text-sm text-slate-500 mt-8 pb-8">
+            <p class="mb-2">This health record was shared via <span class="font-semibold text-primary-600">PetRecord</span></p>
+            <p>Access expires: ${shareInfo.expiresAt ? new Date(shareInfo.expiresAt).toLocaleString() : 'Never'}</p>
+          </div>
+        </div>
+      `;
+    }
+    
+    // Load on page ready
+    loadData();
+  </script>
+</body>
+</html>
