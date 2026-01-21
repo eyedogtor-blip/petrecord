@@ -1,4 +1,4 @@
-const express = require('express');
+ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const initSqlJs = require('sql.js');
@@ -127,30 +127,28 @@ async function extractWithClaude(base64Data, mimeType, petInfo) {
     throw new Error('ANTHROPIC_API_KEY not configured');
   }
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: mimeType === 'application/pdf' ? 'document' : 'image',
-            source: {
-              type: 'base64',
-              media_type: mimeType,
-              data: base64Data
-            }
-          },
-          {
-            type: 'text',
-            text: `You are extracting veterinary medical record data for a pet named ${petInfo.name} (${petInfo.species}, ${petInfo.breed}).
+  console.log(`Calling Claude API for ${petInfo.name} (${mimeType})`);
+
+  // For PDFs use document type, for images use image type
+  const contentType = mimeType === 'application/pdf' ? 'document' : 'image';
+  
+  const requestBody = {
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 4096,
+    messages: [{
+      role: 'user',
+      content: [
+        {
+          type: contentType,
+          source: {
+            type: 'base64',
+            media_type: mimeType,
+            data: base64Data
+          }
+        },
+        {
+          type: 'text',
+          text: `You are extracting veterinary medical record data for a pet named ${petInfo.name} (${petInfo.species}, ${petInfo.breed || 'unknown breed'}).
 
 Extract ALL relevant information from this veterinary document and return a JSON object with these fields (include only fields that have data in the document):
 
@@ -197,30 +195,61 @@ Extract ALL relevant information from this veterinary document and return a JSON
 }
 
 Return ONLY valid JSON, no markdown or explanation. If a section has no data, omit it entirely.`
-          }
-        ]
-      }]
-    })
+        }
+      ]
+    }]
+  };
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify(requestBody)
   });
 
+  const responseText = await response.text();
+  
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Claude API error: ${error}`);
+    console.error('Claude API error response:', responseText);
+    throw new Error(`Claude API error (${response.status}): ${responseText.substring(0, 200)}`);
   }
 
-  const data = await response.json();
-  const text = data.content[0].text;
+  let data;
+  try {
+    data = JSON.parse(responseText);
+  } catch (e) {
+    console.error('Failed to parse Claude response:', responseText.substring(0, 500));
+    throw new Error('Invalid response from Claude API');
+  }
+  
+  const text = data.content?.[0]?.text;
+  if (!text) {
+    console.error('No text in Claude response:', JSON.stringify(data).substring(0, 500));
+    throw new Error('No text content in Claude response');
+  }
+  
+  console.log('Claude response text:', text.substring(0, 200));
   
   // Parse JSON from response
   try {
+    // Try direct parse first
     return JSON.parse(text);
   } catch {
     // Try to extract JSON from markdown code block
     const match = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     if (match) {
-      return JSON.parse(match[1]);
+      try {
+        return JSON.parse(match[1]);
+      } catch (e) {
+        console.error('Failed to parse JSON from code block:', match[1].substring(0, 200));
+        throw new Error('Failed to parse extraction results from code block');
+      }
     }
-    throw new Error('Failed to parse extraction results');
+    console.error('Failed to parse JSON:', text.substring(0, 500));
+    throw new Error('Failed to parse extraction results - response was not valid JSON');
   }
 }
 
@@ -365,12 +394,17 @@ app.get('/api/pets/:id', auth, (req, res) => {
 });
 
 app.post('/api/pets', auth, (req, res) => {
-  const { name, species, breed, sex, dateOfBirth, weightKg, microchipId, notes } = req.body;
-  if (!name || !species || !sex) return res.status(400).json({ error: 'Name, species, sex required' });
-  const id = uuidv4();
-  db.run("INSERT INTO pets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))", [id, req.userId, name, species, breed, sex, dateOfBirth, weightKg, microchipId, notes]);
-  if (weightKg) db.run("INSERT INTO weight_records VALUES (?, ?, ?, date('now'))", [uuidv4(), id, weightKg]);
-  res.status(201).json({ id, name, species, breed, sex, dateOfBirth, weightKg, microchipId, notes, allergies: [], conditions: [] });
+  try {
+    const { name, species, breed, sex, dateOfBirth, weightKg, microchipId, notes } = req.body;
+    if (!name || !species || !sex) return res.status(400).json({ error: 'Name, species, sex required' });
+    const id = uuidv4();
+    db.run("INSERT INTO pets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))", [id, req.userId, name, species, breed, sex, dateOfBirth, weightKg, microchipId, notes]);
+    if (weightKg) db.run("INSERT INTO weight_records VALUES (?, ?, ?, date('now'))", [uuidv4(), id, weightKg]);
+    res.status(201).json({ id, name, species, breed, sex, dateOfBirth, weightKg, microchipId, notes, allergies: [], conditions: [] });
+  } catch (error) {
+    console.error('Error creating pet:', error);
+    res.status(500).json({ error: 'Failed to create patient' });
+  }
 });
 
 app.delete('/api/pets/:id', auth, (req, res) => {
@@ -415,15 +449,23 @@ app.post('/api/pets/:id/upload', auth, upload.single('document'), async (req, re
       return res.status(503).json({ error: 'AI processing not configured. Add ANTHROPIC_API_KEY to enable document extraction.' });
     }
     
+    console.log(`Processing upload: ${req.file.originalname} (${req.file.mimetype}, ${req.file.size} bytes)`);
+    
     // Convert file to base64
     const base64Data = req.file.buffer.toString('base64');
     
     // Extract with Claude
-    const extracted = await extractWithClaude(base64Data, req.file.mimetype, {
-      name: pet.name,
-      species: pet.species,
-      breed: pet.breed
-    });
+    let extracted;
+    try {
+      extracted = await extractWithClaude(base64Data, req.file.mimetype, {
+        name: pet.name,
+        species: pet.species,
+        breed: pet.breed
+      });
+    } catch (extractError) {
+      console.error('Claude extraction error:', extractError);
+      return res.status(500).json({ error: `AI extraction failed: ${extractError.message}` });
+    }
     
     // Save extracted data
     const saved = await saveExtractedData(req.params.id, extracted);
