@@ -256,73 +256,76 @@ Return ONLY valid JSON, no markdown or explanation. If a section has no data, om
 async function saveExtractedData(petId, extracted) {
   const saved = { vaccinations: [], medications: [], records: [], labs: [], allergies: [], conditions: [] };
   
+  // Helper to convert undefined to null
+  const n = (val) => val === undefined ? null : val;
+  
   // Save vaccinations
-  if (extracted.vaccinations) {
+  if (extracted.vaccinations && Array.isArray(extracted.vaccinations)) {
     for (const vax of extracted.vaccinations) {
       const id = uuidv4();
       db.run("INSERT INTO vaccinations VALUES (?, ?, ?, ?, ?, ?, ?)", 
-        [id, petId, vax.name, vax.date, vax.valid_until || null, extracted.facility_name || null, vax.lot_number || null]);
+        [id, petId, n(vax.name), n(vax.date), n(vax.valid_until), n(extracted.facility_name), n(vax.lot_number)]);
       saved.vaccinations.push({ id, ...vax });
     }
   }
   
   // Save medications
-  if (extracted.medications_prescribed) {
+  if (extracted.medications_prescribed && Array.isArray(extracted.medications_prescribed)) {
     for (const med of extracted.medications_prescribed) {
       const id = uuidv4();
       db.run("INSERT INTO medications VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [id, petId, med.drug_name, med.dose, med.frequency, med.indication || null, 'ACTIVE', extracted.date_of_service || new Date().toISOString().split('T')[0], med.prescribed_by || extracted.provider_name || null]);
+        [id, petId, n(med.drug_name), n(med.dose), n(med.frequency), n(med.indication), 'ACTIVE', n(extracted.date_of_service) || new Date().toISOString().split('T')[0], n(med.prescribed_by) || n(extracted.provider_name)]);
       saved.medications.push({ id, ...med });
     }
   }
   
   // Save medical record
-  if (extracted.visit_summary || extracted.diagnosis || extracted.treatment) {
+  if (extracted.visit_summary || extracted.diagnosis || extracted.treatment || extracted.document_type) {
     const id = uuidv4();
     db.run("INSERT INTO medical_records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
-      [id, petId, extracted.document_type?.toUpperCase() || 'OTHER', extracted.date_of_service, extracted.facility_name, extracted.provider_name, 
-       extracted.visit_summary, extracted.chief_complaint, extracted.diagnosis, extracted.treatment, extracted.notes || extracted.follow_up]);
+      [id, petId, n(extracted.document_type)?.toUpperCase() || 'OTHER', n(extracted.date_of_service), n(extracted.facility_name), n(extracted.provider_name), 
+       n(extracted.visit_summary), n(extracted.chief_complaint), n(extracted.diagnosis), n(extracted.treatment), n(extracted.notes) || n(extracted.follow_up)]);
     saved.records.push({ id, type: extracted.document_type, summary: extracted.visit_summary });
   }
   
   // Save lab results
-  if (extracted.lab_results && extracted.lab_results.results) {
+  if (extracted.lab_results && extracted.lab_results.results && Array.isArray(extracted.lab_results.results)) {
     const id = uuidv4();
     db.run("INSERT INTO lab_results VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [id, petId, extracted.lab_results.panel_name, extracted.lab_results.collection_date || extracted.date_of_service, 
-       JSON.stringify(extracted.lab_results.results), extracted.lab_results.interpretation, extracted.facility_name]);
+      [id, petId, n(extracted.lab_results.panel_name), n(extracted.lab_results.collection_date) || n(extracted.date_of_service), 
+       JSON.stringify(extracted.lab_results.results), n(extracted.lab_results.interpretation), n(extracted.facility_name)]);
     saved.labs.push({ id, panel: extracted.lab_results.panel_name });
   }
   
   // Save allergies
-  if (extracted.allergies_noted) {
+  if (extracted.allergies_noted && Array.isArray(extracted.allergies_noted)) {
     for (const allergy of extracted.allergies_noted) {
       // Check if already exists
-      const existing = queryOne("SELECT id FROM allergies WHERE pet_id = ? AND allergen = ?", [petId, allergy.allergen]);
-      if (!existing) {
+      const existing = queryOne("SELECT id FROM allergies WHERE pet_id = ? AND allergen = ?", [petId, n(allergy.allergen)]);
+      if (!existing && allergy.allergen) {
         const id = uuidv4();
-        db.run("INSERT INTO allergies VALUES (?, ?, ?, ?, ?)", [id, petId, allergy.allergen, allergy.reaction, allergy.severity]);
+        db.run("INSERT INTO allergies VALUES (?, ?, ?, ?, ?)", [id, petId, n(allergy.allergen), n(allergy.reaction), n(allergy.severity)]);
         saved.allergies.push({ id, ...allergy });
       }
     }
   }
   
   // Save conditions
-  if (extracted.conditions_noted) {
+  if (extracted.conditions_noted && Array.isArray(extracted.conditions_noted)) {
     for (const cond of extracted.conditions_noted) {
-      const existing = queryOne("SELECT id FROM conditions WHERE pet_id = ? AND condition = ?", [petId, cond.condition]);
-      if (!existing) {
+      const existing = queryOne("SELECT id FROM conditions WHERE pet_id = ? AND condition = ?", [petId, n(cond.condition)]);
+      if (!existing && cond.condition) {
         const id = uuidv4();
-        db.run("INSERT INTO conditions VALUES (?, ?, ?, ?, ?)", [id, petId, cond.condition, cond.status || 'active', extracted.date_of_service]);
+        db.run("INSERT INTO conditions VALUES (?, ?, ?, ?, ?)", [id, petId, n(cond.condition), n(cond.status) || 'active', n(extracted.date_of_service)]);
         saved.conditions.push({ id, ...cond });
       }
     }
   }
   
   // Update weight if present
-  if (extracted.weight_kg) {
+  if (extracted.weight_kg && typeof extracted.weight_kg === 'number') {
     const id = uuidv4();
-    db.run("INSERT INTO weight_records VALUES (?, ?, ?, ?)", [id, petId, extracted.weight_kg, extracted.date_of_service || new Date().toISOString().split('T')[0]]);
+    db.run("INSERT INTO weight_records VALUES (?, ?, ?, ?)", [id, petId, extracted.weight_kg, n(extracted.date_of_service) || new Date().toISOString().split('T')[0]]);
     db.run("UPDATE pets SET weight_kg = ? WHERE id = ?", [extracted.weight_kg, petId]);
   }
   
