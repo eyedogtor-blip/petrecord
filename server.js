@@ -46,7 +46,7 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS lab_results (id TEXT PRIMARY KEY, pet_id TEXT, panel_name TEXT, collection_date TEXT, results TEXT, interpretation TEXT, facility_name TEXT);
     CREATE TABLE IF NOT EXISTS access_tokens (id TEXT PRIMARY KEY, user_id TEXT, pet_id TEXT, token TEXT UNIQUE, permission_level TEXT, valid_until TEXT, is_active INTEGER DEFAULT 1);
     CREATE TABLE IF NOT EXISTS weight_records (id TEXT PRIMARY KEY, pet_id TEXT, weight_kg REAL, date TEXT);
-    CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, pet_id TEXT, filename TEXT, upload_date TEXT, extracted_data TEXT, processing_status TEXT DEFAULT 'pending');
+    CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, pet_id TEXT, filename TEXT, mimetype TEXT, file_data TEXT, upload_date TEXT, extracted_data TEXT, processing_status TEXT DEFAULT 'pending');
   `);
   
   // Seed demo data
@@ -473,10 +473,10 @@ app.post('/api/pets/:id/upload', auth, upload.single('document'), async (req, re
     // Save extracted data
     const saved = await saveExtractedData(req.params.id, extracted);
     
-    // Save document record
+    // Save document record with file data
     const docId = uuidv4();
-    db.run("INSERT INTO documents VALUES (?, ?, ?, datetime('now'), ?, 'completed')", 
-      [docId, req.params.id, req.file.originalname, JSON.stringify(extracted)]);
+    db.run("INSERT INTO documents VALUES (?, ?, ?, ?, ?, datetime('now'), ?, 'completed')", 
+      [docId, req.params.id, req.file.originalname, req.file.mimetype, base64Data, JSON.stringify(extracted)]);
     
     res.json({
       success: true,
@@ -657,6 +657,46 @@ app.post('/api/share/access/:token', (req, res) => {
   }
   
   res.json(data);
+});
+
+// DOCUMENTS
+app.get('/api/pets/:id/documents', auth, (req, res) => {
+  const pet = queryOne("SELECT id FROM pets WHERE id = ? AND owner_id = ?", [req.params.id, req.userId]);
+  if (!pet) return res.status(404).json({ error: 'Pet not found' });
+  const docs = query("SELECT id, filename, mimetype, upload_date, processing_status, extracted_data FROM documents WHERE pet_id = ? ORDER BY upload_date DESC", [req.params.id]);
+  res.json(docs.map(d => ({
+    id: d.id,
+    filename: d.filename,
+    mimetype: d.mimetype,
+    uploadDate: d.upload_date,
+    status: d.processing_status,
+    extracted: d.extracted_data ? JSON.parse(d.extracted_data) : null
+  })));
+});
+
+app.get('/api/documents/:id', auth, (req, res) => {
+  const doc = queryOne("SELECT d.*, p.owner_id FROM documents d JOIN pets p ON d.pet_id = p.id WHERE d.id = ?", [req.params.id]);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  if (doc.owner_id !== req.userId) return res.status(403).json({ error: 'Access denied' });
+  res.json({
+    id: doc.id,
+    filename: doc.filename,
+    mimetype: doc.mimetype,
+    uploadDate: doc.upload_date,
+    status: doc.processing_status,
+    extracted: doc.extracted_data ? JSON.parse(doc.extracted_data) : null
+  });
+});
+
+app.get('/api/documents/:id/file', auth, (req, res) => {
+  const doc = queryOne("SELECT d.*, p.owner_id FROM documents d JOIN pets p ON d.pet_id = p.id WHERE d.id = ?", [req.params.id]);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  if (doc.owner_id !== req.userId) return res.status(403).json({ error: 'Access denied' });
+  
+  const buffer = Buffer.from(doc.file_data, 'base64');
+  res.setHeader('Content-Type', doc.mimetype);
+  res.setHeader('Content-Disposition', `inline; filename="${doc.filename}"`);
+  res.send(buffer);
 });
 
 // HEALTH CHECK
