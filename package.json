@@ -1,6 +1,6 @@
 {
   "name": "petrecord",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "description": "Pet health record platform with AI extraction, voice transcription, and exports",
   "main": "server.js",
   "scripts": {
