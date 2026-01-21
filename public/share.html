@@ -35,11 +35,14 @@
   <script>
     const token = window.location.pathname.split('/share/')[1];
     console.log('Share token:', token);
+    console.log('Full pathname:', window.location.pathname);
     
     async function loadData() {
       const app = document.getElementById('app');
+      console.log('loadData called');
       
       if (!token) {
+        console.error('No token found');
         app.innerHTML = renderError('No share token provided');
         return;
       }
@@ -47,7 +50,9 @@
       try {
         console.log('Validating token...');
         // Validate first
-        const validateRes = await fetch(`/api/share/validate/${token}`);
+        const validateUrl = `/api/share/validate/${token}`;
+        console.log('Fetching:', validateUrl);
+        const validateRes = await fetch(validateUrl);
         console.log('Validate response status:', validateRes.status);
         
         if (!validateRes.ok) {
