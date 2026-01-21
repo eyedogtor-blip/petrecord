@@ -25,36 +25,59 @@
   </style>
 </head>
 <body class="bg-slate-50 min-h-screen">
-  <div id="app"></div>
+  <div id="app">
+    <div class="min-h-screen flex items-center justify-center">
+      <div class="text-center">
+        <div class="w-12 h-12 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin mx-auto mb-4"></div>
+        <p class="text-slate-600">Loading health records...</p>
+      </div>
+    </div>
+  </div>
   
   <script>
     const token = window.location.pathname.split('/share/')[1];
+    console.log('Share token:', token);
     
     async function loadData() {
       const app = document.getElementById('app');
       
+      if (!token) {
+        app.innerHTML = renderError('No share token provided');
+        return;
+      }
+      
       try {
+        console.log('Validating token...');
         // Validate first
         const validateRes = await fetch(`/api/share/validate/${token}`);
+        console.log('Validate response status:', validateRes.status);
+        
         if (!validateRes.ok) {
           const err = await validateRes.json();
+          console.error('Validate error:', err);
           app.innerHTML = renderError(err.error || 'Invalid or expired share link');
           return;
         }
         
+        console.log('Fetching full data...');
         // Get full data
         const dataRes = await fetch(`/api/share/access/${token}`, { method: 'POST' });
+        console.log('Data response status:', dataRes.status);
+        
         if (!dataRes.ok) {
           const err = await dataRes.json();
+          console.error('Data error:', err);
           app.innerHTML = renderError(err.error || 'Unable to load records');
           return;
         }
         
         const data = await dataRes.json();
+        console.log('Data received:', data);
         app.innerHTML = renderRecord(data);
         
       } catch (error) {
-        app.innerHTML = renderError('Unable to connect. Please try again.');
+        console.error('Load error:', error);
+        app.innerHTML = renderError('Unable to connect: ' + error.message);
       }
     }
     
