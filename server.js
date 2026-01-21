@@ -768,6 +768,306 @@ app.post('/api/share/access/:token', async (req, res) => {
 // HEALTH CHECK
 app.get('/api/health', (req, res) => res.json({ status: 'ok', db: 'postgresql' }));
 
+// Status endpoint for frontend
+app.get('/api/status', (req, res) => res.json({ 
+  aiEnabled: !!ANTHROPIC_API_KEY,
+  voiceEnabled: !!OPENAI_API_KEY
+}));
+
+// ================== EMAIL FORWARDING ==================
+
+// Webhook for inbound emails (works with SendGrid, Mailgun, Postmark)
+app.post('/api/email/inbound', express.raw({ type: '*/*', limit: '25mb' }), async (req, res) => {
+  try {
+    let emailData;
+    
+    // Parse based on content type
+    const contentType = req.headers['content-type'] || '';
+    
+    if (contentType.includes('application/json')) {
+      emailData = JSON.parse(req.body.toString());
+    } else if (contentType.includes('multipart/form-data')) {
+      // For SendGrid/Mailgun multipart posts, use multer
+      // This is handled by the separate route below
+      return res.status(400).json({ error: 'Use /api/email/inbound/multipart for multipart data' });
+    } else {
+      emailData = JSON.parse(req.body.toString());
+    }
+    
+    console.log('Inbound email received:', emailData.to || emailData.recipient || 'unknown');
+    
+    // Extract email fields (normalize across providers)
+    const to = emailData.to || emailData.recipient || emailData.To || '';
+    const from = emailData.from || emailData.sender || emailData.From || '';
+    const subject = emailData.subject || emailData.Subject || '';
+    const textBody = emailData.text || emailData['body-plain'] || emailData.TextBody || '';
+    const htmlBody = emailData.html || emailData['body-html'] || emailData.HtmlBody || '';
+    const attachments = emailData.attachments || emailData.Attachments || [];
+    
+    // Find user by forwarding address
+    const forwardingId = extractForwardingId(to);
+    if (!forwardingId) {
+      console.log('No forwarding ID found in:', to);
+      return res.status(200).json({ message: 'No matching forwarding address' });
+    }
+    
+    const user = await queryOne("SELECT * FROM users WHERE email_forwarding = $1", [forwardingId]);
+    if (!user) {
+      console.log('No user found for forwarding ID:', forwardingId);
+      return res.status(200).json({ message: 'No matching user' });
+    }
+    
+    console.log(`Processing email for user: ${user.email}`);
+    
+    // Get user's pets to match against
+    const pets = await query("SELECT * FROM pets WHERE owner_id = $1", [user.id]);
+    if (pets.length === 0) {
+      console.log('User has no pets');
+      return res.status(200).json({ message: 'User has no pets' });
+    }
+    
+    // Use Claude to extract data from email
+    const extracted = await extractFromEmail(subject, textBody || htmlBody, pets);
+    
+    if (!extracted || !extracted.pet_id) {
+      console.log('Could not extract data or match pet');
+      return res.status(200).json({ message: 'Could not process email content' });
+    }
+    
+    // Save extracted data
+    const saved = await saveExtractedData(extracted.pet_id, extracted);
+    
+    // Save email record
+    const emailId = uuidv4();
+    await run(
+      "INSERT INTO documents (id, pet_id, filename, mimetype, file_data, extracted_data, processing_status) VALUES ($1, $2, $3, $4, $5, $6, 'email')",
+      [emailId, extracted.pet_id, `Email: ${subject.substring(0, 50)}`, 'message/rfc822', Buffer.from(textBody || htmlBody).toString('base64'), JSON.stringify(extracted)]
+    );
+    
+    console.log('Email processed successfully:', { emailId, saved });
+    res.status(200).json({ success: true, emailId, saved });
+    
+  } catch (error) {
+    console.error('Email processing error:', error);
+    // Always return 200 to prevent email service retries
+    res.status(200).json({ error: error.message });
+  }
+});
+
+// Multipart form handler for SendGrid/Mailgun
+const emailUpload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 }
+});
+
+app.post('/api/email/inbound/multipart', emailUpload.any(), async (req, res) => {
+  try {
+    console.log('Multipart email received');
+    
+    // Extract fields from multipart form
+    const to = req.body.to || req.body.recipient || req.body.envelope?.to?.[0] || '';
+    const from = req.body.from || req.body.sender || '';
+    const subject = req.body.subject || '';
+    const textBody = req.body.text || req.body['body-plain'] || '';
+    const htmlBody = req.body.html || req.body['body-html'] || '';
+    
+    console.log('Email to:', to, 'Subject:', subject);
+    
+    // Find user by forwarding address
+    const forwardingId = extractForwardingId(to);
+    if (!forwardingId) {
+      return res.status(200).json({ message: 'No matching forwarding address' });
+    }
+    
+    const user = await queryOne("SELECT * FROM users WHERE email_forwarding = $1", [forwardingId]);
+    if (!user) {
+      return res.status(200).json({ message: 'No matching user' });
+    }
+    
+    const pets = await query("SELECT * FROM pets WHERE owner_id = $1", [user.id]);
+    if (pets.length === 0) {
+      return res.status(200).json({ message: 'User has no pets' });
+    }
+    
+    // Process attachments first (PDFs, images)
+    let attachmentResults = [];
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        if (file.mimetype === 'application/pdf' || file.mimetype.startsWith('image/')) {
+          console.log('Processing attachment:', file.originalname, file.mimetype);
+          try {
+            const base64Data = file.buffer.toString('base64');
+            const petInfo = pets[0]; // Use first pet as default
+            const extracted = await extractWithClaude(base64Data, file.mimetype, petInfo);
+            
+            // Try to match pet name in extracted data
+            let matchedPet = pets[0];
+            if (extracted.patient_name) {
+              const found = pets.find(p => p.name.toLowerCase() === extracted.patient_name.toLowerCase());
+              if (found) matchedPet = found;
+            }
+            
+            const saved = await saveExtractedData(matchedPet.id, extracted);
+            
+            // Save document
+            const docId = uuidv4();
+            await run(
+              "INSERT INTO documents (id, pet_id, filename, mimetype, file_data, extracted_data, processing_status) VALUES ($1, $2, $3, $4, $5, $6, 'completed')",
+              [docId, matchedPet.id, file.originalname, file.mimetype, base64Data, JSON.stringify(extracted)]
+            );
+            
+            attachmentResults.push({ filename: file.originalname, docId, saved });
+          } catch (err) {
+            console.error('Attachment processing error:', err);
+          }
+        }
+      }
+    }
+    
+    // If no attachments, try to extract from email body
+    if (attachmentResults.length === 0 && (textBody || htmlBody)) {
+      const extracted = await extractFromEmail(subject, textBody || htmlBody, pets);
+      if (extracted && extracted.pet_id) {
+        const saved = await saveExtractedData(extracted.pet_id, extracted);
+        attachmentResults.push({ source: 'email_body', saved });
+      }
+    }
+    
+    res.status(200).json({ success: true, results: attachmentResults });
+    
+  } catch (error) {
+    console.error('Multipart email error:', error);
+    res.status(200).json({ error: error.message });
+  }
+});
+
+// Helper to extract forwarding ID from email address
+function extractForwardingId(email) {
+  // Supports formats:
+  // - {id}@inbound.petrecord.app
+  // - petrecord+{id}@domain.com
+  // - inbound+{id}@petrecord.app
+  
+  const patterns = [
+    /^([a-f0-9-]+)@/i,                    // id@domain
+    /\+([a-f0-9-]+)@/i,                   // user+id@domain
+    /^inbound\+([a-f0-9-]+)@/i,           // inbound+id@domain
+  ];
+  
+  for (const pattern of patterns) {
+    const match = email.match(pattern);
+    if (match && match[1].length >= 8) {
+      return match[1];
+    }
+  }
+  
+  return null;
+}
+
+// Extract data from email body using Claude
+async function extractFromEmail(subject, body, pets) {
+  if (!ANTHROPIC_API_KEY) return null;
+  
+  const petList = pets.map(p => `- ${p.name} (${p.species}, ${p.breed || 'unknown breed'})`).join('\n');
+  
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json', 
+      'x-api-key': ANTHROPIC_API_KEY, 
+      'anthropic-version': '2023-06-01' 
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      messages: [{
+        role: 'user',
+        content: `Extract veterinary information from this email. Match to one of these pets:
+${petList}
+
+Email Subject: ${subject}
+
+Email Body:
+${body.substring(0, 10000)}
+
+Return JSON with:
+{
+  "pet_name": "matched pet name from list above",
+  "document_type": "wellness_exam|vaccination|lab_results|surgery|specialist|emergency|prescription|reminder|other",
+  "date_of_service": "YYYY-MM-DD if mentioned",
+  "facility_name": "clinic name if mentioned",
+  "provider_name": "Dr. Name if mentioned",
+  "visit_summary": "summary of the email content",
+  "diagnosis": "any diagnoses mentioned",
+  "treatment": "any treatments mentioned",
+  "vaccinations": [{"name": "vaccine", "date": "YYYY-MM-DD", "valid_until": "YYYY-MM-DD"}],
+  "medications_prescribed": [{"drug_name": "name", "dose": "dose", "frequency": "frequency"}],
+  "follow_up": "any follow-up instructions",
+  "appointment_reminder": {"date": "YYYY-MM-DD", "time": "HH:MM", "reason": "reason"} 
+}
+
+Return ONLY valid JSON. If you can't match a pet, use the first one.`
+      }]
+    })
+  });
+  
+  if (!response.ok) return null;
+  
+  const data = await response.json();
+  const text = data.content?.[0]?.text;
+  if (!text) return null;
+  
+  try {
+    const extracted = JSON.parse(text.replace(/```json\n?|\n?```/g, ''));
+    
+    // Match pet
+    const matchedPet = pets.find(p => 
+      p.name.toLowerCase() === extracted.pet_name?.toLowerCase()
+    ) || pets[0];
+    
+    extracted.pet_id = matchedPet.id;
+    return extracted;
+  } catch {
+    return null;
+  }
+}
+
+// Get user's forwarding address
+app.get('/api/email/forwarding-address', auth, async (req, res) => {
+  try {
+    const user = await queryOne("SELECT email_forwarding FROM users WHERE id = $1", [req.userId]);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    
+    // Generate address based on your email setup
+    const baseUrl = process.env.EMAIL_DOMAIN || 'inbound.petrecord.app';
+    const address = `${user.email_forwarding}@${baseUrl}`;
+    
+    res.json({ 
+      forwardingAddress: address,
+      forwardingId: user.email_forwarding,
+      instructions: `Forward vet emails to this address to automatically extract and save medical records.`
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Regenerate forwarding address
+app.post('/api/email/regenerate-address', auth, async (req, res) => {
+  try {
+    const newId = uuidv4();
+    await run("UPDATE users SET email_forwarding = $1 WHERE id = $2", [newId, req.userId]);
+    
+    const baseUrl = process.env.EMAIL_DOMAIN || 'inbound.petrecord.app';
+    res.json({ 
+      forwardingAddress: `${newId}@${baseUrl}`,
+      forwardingId: newId
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Serve frontend
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
