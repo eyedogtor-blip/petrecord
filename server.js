@@ -863,6 +863,7 @@ app.post('/api/share/quick-share', auth, async (req, res) => {
     const now = new Date();
     if (duration === '1h') validUntil = new Date(now.getTime() + 60*60*1000).toISOString();
     else if (duration === '24h') validUntil = new Date(now.getTime() + 24*60*60*1000).toISOString();
+    else if (duration === '72h') validUntil = new Date(now.getTime() + 72*60*60*1000).toISOString();
     else if (duration === '7d') validUntil = new Date(now.getTime() + 7*24*60*60*1000).toISOString();
     else if (duration === '30d') validUntil = new Date(now.getTime() + 30*24*60*60*1000).toISOString();
     
@@ -921,24 +922,57 @@ app.post('/api/share/access/:token', async (req, res) => {
   try {
     const token = await queryOne("SELECT * FROM access_tokens WHERE token = $1", [req.params.token]);
     if (!token || !token.is_active) return res.status(404).json({ error: 'Invalid share link' });
-    if (token.valid_until && new Date(token.valid_until) < new Date()) return res.status(403).json({ error: 'Expired' });
+    if (token.valid_until && new Date(token.valid_until) < new Date()) return res.status(403).json({ error: 'This share link has expired' });
     
     const pet = await queryOne("SELECT * FROM pets WHERE id = $1", [token.pet_id]);
     const allergies = await query("SELECT * FROM allergies WHERE pet_id = $1", [token.pet_id]);
     const conditions = await query("SELECT * FROM conditions WHERE pet_id = $1", [token.pet_id]);
-    const medications = await query("SELECT * FROM medications WHERE pet_id = $1 AND status = 'ACTIVE'", [token.pet_id]);
-    const vaccinations = await query("SELECT * FROM vaccinations WHERE pet_id = $1", [token.pet_id]);
+    const medications = await query("SELECT * FROM medications WHERE pet_id = $1", [token.pet_id]);
+    const vaccinations = await query("SELECT * FROM vaccinations WHERE pet_id = $1 ORDER BY administration_date DESC", [token.pet_id]);
+    const records = await query("SELECT * FROM medical_records WHERE pet_id = $1 ORDER BY date_of_service DESC", [token.pet_id]);
+    const labs = await query("SELECT * FROM lab_results WHERE pet_id = $1 ORDER BY collection_date DESC", [token.pet_id]);
+    const weights = await query("SELECT * FROM weight_records WHERE pet_id = $1 ORDER BY date DESC", [token.pet_id]);
+    const documents = await query("SELECT id, filename, mimetype, upload_date, extracted_data FROM documents WHERE pet_id = $1 ORDER BY upload_date DESC", [token.pet_id]);
+    const recordings = await query("SELECT id, title, duration_seconds, transcript, summary, recorded_at FROM recordings WHERE pet_id = $1 ORDER BY recorded_at DESC", [token.pet_id]);
     
-    let data = { pet: { name: pet.name, species: pet.species, breed: pet.breed, sex: pet.sex, weightKg: pet.weight_kg }, allergies, conditions, activeMedications: medications, vaccinations };
-    
-    if (token.permission_level === 'FULL_ACCESS') {
-      const records = await query("SELECT * FROM medical_records WHERE pet_id = $1 ORDER BY date_of_service DESC", [token.pet_id]);
-      const labs = await query("SELECT * FROM lab_results WHERE pet_id = $1", [token.pet_id]);
-      data.medicalRecords = records;
-      data.labResults = labs.map(l => ({ ...l, results: JSON.parse(l.results || '[]') }));
+    // Calculate age
+    let age = null;
+    if (pet.date_of_birth) {
+      const birth = new Date(pet.date_of_birth);
+      const now = new Date();
+      const years = now.getFullYear() - birth.getFullYear();
+      const months = now.getMonth() - birth.getMonth();
+      if (years === 0) age = `${months} months`;
+      else if (months < 0) age = `${years - 1} years`;
+      else age = `${years} years`;
     }
     
-    res.json(data);
+    res.json({
+      pet: {
+        name: pet.name,
+        species: pet.species,
+        breed: pet.breed,
+        sex: pet.sex,
+        dateOfBirth: pet.date_of_birth,
+        age,
+        weightKg: pet.weight_kg,
+        microchipId: pet.microchip_id
+      },
+      allergies,
+      conditions,
+      medications,
+      activeMedications: medications.filter(m => m.status === 'ACTIVE'),
+      vaccinations,
+      medicalRecords: records,
+      labResults: labs.map(l => ({ ...l, results: JSON.parse(l.results || '[]') })),
+      weightHistory: weights,
+      documents: documents.map(d => ({ ...d, extracted: JSON.parse(d.extracted_data || '{}') })),
+      recordings,
+      shareInfo: {
+        expiresAt: token.valid_until,
+        permissionLevel: token.permission_level
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -946,6 +980,11 @@ app.post('/api/share/access/:token', async (req, res) => {
 
 // HEALTH CHECK
 app.get('/api/health', (req, res) => res.json({ status: 'ok', db: 'postgresql' }));
+
+// Serve public share page
+app.get('/share/:token', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'share.html'));
+});
 
 // Status endpoint for frontend
 app.get('/api/status', (req, res) => res.json({ 
