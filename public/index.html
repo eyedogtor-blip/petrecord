@@ -591,7 +591,10 @@
         api.get(`/api/pets/${pet.id}/timeline`).then(setTimeline);
         api.get(`/api/pets/${pet.id}/documents`).then(setDocuments);
         api.get(`/api/pets/${pet.id}/recordings`).then(setRecordings);
-        api.get(`/api/pets/${pet.id}/lab-trends`).then(setLabTrends).catch(() => {});
+        api.get(`/api/pets/${pet.id}/lab-trends`).then(data => {
+          console.log('Lab trends loaded:', data);
+          setLabTrends(data);
+        }).catch(err => console.error('Lab trends error:', err));
       };
       useEffect(() => { refreshPet(); }, [pet.id]);
 
@@ -1018,18 +1021,29 @@
       const downloadPdf = async () => {
         setLoading(true);
         try {
+          console.log('Downloading insurance PDF for pet:', pet.id);
+          const token = localStorage.getItem('token');
+          if (!token) throw new Error('Not logged in');
+          
           const response = await fetch(`/api/pets/${pet.id}/export/insurance-claim/pdf`, {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`,
+              'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
             },
             body: JSON.stringify(form)
           });
           
-          if (!response.ok) throw new Error('Failed to generate PDF');
+          console.log('Response status:', response.status);
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('PDF error response:', errorText);
+            throw new Error(errorText || 'Failed to generate PDF');
+          }
           
           const blob = await response.blob();
+          console.log('Received blob:', blob.size, 'bytes');
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
@@ -1038,6 +1052,7 @@
           URL.revokeObjectURL(url);
           onClose();
         } catch (err) {
+          console.error('PDF download error:', err);
           alert('Error: ' + err.message);
         } finally {
           setLoading(false);
@@ -1161,18 +1176,29 @@
       const downloadPdf = async () => {
         setLoading(true);
         try {
+          console.log('Downloading referral PDF for pet:', pet.id);
+          const token = localStorage.getItem('token');
+          if (!token) throw new Error('Not logged in');
+          
           const response = await fetch(`/api/pets/${pet.id}/export/referral-summary/pdf`, {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`,
+              'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
             },
             body: JSON.stringify(form)
           });
           
-          if (!response.ok) throw new Error('Failed to generate PDF');
+          console.log('Response status:', response.status);
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('PDF error response:', errorText);
+            throw new Error(errorText || 'Failed to generate PDF');
+          }
           
           const blob = await response.blob();
+          console.log('Received blob:', blob.size, 'bytes');
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
@@ -1181,6 +1207,7 @@
           URL.revokeObjectURL(url);
           onClose();
         } catch (err) {
+          console.error('PDF download error:', err);
           alert('Error: ' + err.message);
         } finally {
           setLoading(false);
