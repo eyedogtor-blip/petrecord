@@ -117,7 +117,12 @@
 
     const api = {
       get: (url) => fetch(url, { headers: { Authorization: `Bearer ${localStorage.getItem('petrecord_token')}` } }).then(r => r.json()),
-      post: (url, data) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('petrecord_token')}` }, body: JSON.stringify(data) }).then(r => r.json()),
+      post: async (url, data) => {
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('petrecord_token')}` }, body: JSON.stringify(data) });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Request failed');
+        return json;
+      },
       upload: (url, formData) => fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('petrecord_token')}` }, body: formData }).then(r => r.json()),
     };
 
@@ -240,7 +245,16 @@
         api.get('/api/ai/status').then(data => setAiEnabled(data.enabled));
       }, []);
 
-      const handleAddPet = async (petData) => { const newPet = await api.post('/api/pets', petData); setPets([newPet, ...pets]); setShowAddPet(false); };
+      const handleAddPet = async (petData) => { 
+        try {
+          const newPet = await api.post('/api/pets', petData); 
+          setPets([newPet, ...pets]); 
+          setShowAddPet(false); 
+        } catch (err) {
+          console.error('Failed to add pet:', err);
+          alert('Failed to add patient: ' + err.message);
+        }
+      };
 
       if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-slate-500">Loading...</div></div>;
 
@@ -310,7 +324,15 @@
     function AddPetModal({ onClose, onSave }) {
       const [form, setForm] = useState({ name: '', species: 'DOG', breed: '', sex: 'MALE', dateOfBirth: '', weightKg: '' });
       const [loading, setLoading] = useState(false);
-      const handleSubmit = async (e) => { e.preventDefault(); setLoading(true); await onSave({ ...form, weightKg: form.weightKg ? parseFloat(form.weightKg) : null }); setLoading(false); };
+      const handleSubmit = async (e) => { 
+        e.preventDefault(); 
+        setLoading(true); 
+        try {
+          await onSave({ ...form, weightKg: form.weightKg ? parseFloat(form.weightKg) : null }); 
+        } finally {
+          setLoading(false); 
+        }
+      };
 
       return (
         <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
@@ -353,7 +375,23 @@
         setError('');
         const formData = new FormData();
         formData.append('document', file);
-        try { const data = await api.upload(`/api/pets/${pet.id}/upload`, formData); if (data.error) { setError(data.error); } else { setResult(data); } } catch { setError('Failed to process document'); } finally { setUploading(false); }
+        try { 
+          const res = await fetch(`/api/pets/${pet.id}/upload`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${localStorage.getItem('petrecord_token')}` },
+            body: formData
+          });
+          const data = await res.json();
+          if (!res.ok || data.error) { 
+            setError(data.error || 'Upload failed'); 
+          } else { 
+            setResult(data); 
+          } 
+        } catch (err) { 
+          setError('Network error: ' + err.message); 
+        } finally { 
+          setUploading(false); 
+        }
       };
       const handleClose = () => { if (result) onSuccess(); onClose(); };
 
