@@ -49,7 +49,13 @@ async function initDb() {
       );
       CREATE TABLE IF NOT EXISTS pets (
         id TEXT PRIMARY KEY, owner_id TEXT, name TEXT, species TEXT, breed TEXT, sex TEXT, 
-        date_of_birth TEXT, weight_kg REAL, microchip_id TEXT, notes TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        date_of_birth TEXT, weight_kg REAL, microchip_id TEXT, notes TEXT, photo_data TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS medical_images (
+        id TEXT PRIMARY KEY, pet_id TEXT, filename TEXT, image_type TEXT, modality TEXT,
+        body_part TEXT, description TEXT, image_data TEXT, thumbnail_data TEXT,
+        study_date TEXT, uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
       CREATE TABLE IF NOT EXISTS allergies (id TEXT PRIMARY KEY, pet_id TEXT, allergen TEXT, reaction TEXT, severity TEXT);
       CREATE TABLE IF NOT EXISTS conditions (id TEXT PRIMARY KEY, pet_id TEXT, condition TEXT, status TEXT, diagnosed_date TEXT);
@@ -319,7 +325,7 @@ app.get('/api/pets', auth, async (req, res) => {
       const conditions = await query("SELECT * FROM conditions WHERE pet_id = $1", [p.id]);
       const medications = await query("SELECT * FROM medications WHERE pet_id = $1 AND status = 'ACTIVE'", [p.id]);
       const vaccinations = await query("SELECT * FROM vaccinations WHERE pet_id = $1", [p.id]);
-      return { id: p.id, name: p.name, species: p.species, breed: p.breed, sex: p.sex, dateOfBirth: p.date_of_birth, weightKg: p.weight_kg, microchipId: p.microchip_id, notes: p.notes, allergies, conditions, medications, vaccinations };
+      return { id: p.id, name: p.name, species: p.species, breed: p.breed, sex: p.sex, dateOfBirth: p.date_of_birth, weightKg: p.weight_kg, microchipId: p.microchip_id, notes: p.notes, photoData: p.photo_data, allergies, conditions, medications, vaccinations };
     }));
     res.json(result);
   } catch (error) {
@@ -332,22 +338,25 @@ app.get('/api/pets/:id', auth, async (req, res) => {
     const pet = await queryOne("SELECT * FROM pets WHERE id = $1 AND owner_id = $2", [req.params.id, req.userId]);
     if (!pet) return res.status(404).json({ error: 'Pet not found' });
     
-    const [allergies, conditions, medications, vaccinations, records, labs, weights] = await Promise.all([
+    const [allergies, conditions, medications, vaccinations, records, labs, weights, images] = await Promise.all([
       query("SELECT * FROM allergies WHERE pet_id = $1", [pet.id]),
       query("SELECT * FROM conditions WHERE pet_id = $1", [pet.id]),
-      query("SELECT * FROM medications WHERE pet_id = $1 AND status = 'ACTIVE'", [pet.id]),
+      query("SELECT * FROM medications WHERE pet_id = $1", [pet.id]),
       query("SELECT * FROM vaccinations WHERE pet_id = $1", [pet.id]),
       query("SELECT * FROM medical_records WHERE pet_id = $1 ORDER BY date_of_service DESC", [pet.id]),
       query("SELECT * FROM lab_results WHERE pet_id = $1", [pet.id]),
-      query("SELECT * FROM weight_records WHERE pet_id = $1 ORDER BY date DESC LIMIT 10", [pet.id])
+      query("SELECT * FROM weight_records WHERE pet_id = $1 ORDER BY date DESC LIMIT 10", [pet.id]),
+      query("SELECT id, filename, image_type, modality, body_part, description, study_date, uploaded_at FROM medical_images WHERE pet_id = $1 ORDER BY study_date DESC", [pet.id])
     ]);
     
     res.json({
       id: pet.id, name: pet.name, species: pet.species, breed: pet.breed, sex: pet.sex,
       dateOfBirth: pet.date_of_birth, weightKg: pet.weight_kg, microchipId: pet.microchip_id, notes: pet.notes,
+      photoData: pet.photo_data,
       allergies, conditions, medications, vaccinations, medicalRecords: records,
       labResults: labs.map(l => ({ ...l, results: JSON.parse(l.results || '[]') })),
-      weightHistory: weights
+      weightHistory: weights,
+      medicalImages: images
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -358,7 +367,7 @@ app.post('/api/pets', auth, async (req, res) => {
   try {
     const { name, species, breed, sex, dateOfBirth, weightKg, microchipId, notes } = req.body;
     const id = uuidv4();
-    await run("INSERT INTO pets VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)", [id, req.userId, name, species, breed, sex, dateOfBirth, weightKg, microchipId, notes]);
+    await run("INSERT INTO pets (id, owner_id, name, species, breed, sex, date_of_birth, weight_kg, microchip_id, notes, photo_data, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, CURRENT_TIMESTAMP)", [id, req.userId, name, species, breed, sex, dateOfBirth, weightKg, microchipId, notes]);
     res.status(201).json({ id, name, species, breed, sex, dateOfBirth, weightKg, microchipId, notes });
   } catch (error) {
     console.error('Error creating pet:', error);
@@ -392,11 +401,179 @@ app.delete('/api/pets/:id', auth, async (req, res) => {
     await run("DELETE FROM lab_results WHERE pet_id = $1", [req.params.id]);
     await run("DELETE FROM documents WHERE pet_id = $1", [req.params.id]);
     await run("DELETE FROM recordings WHERE pet_id = $1", [req.params.id]);
+    await run("DELETE FROM medical_images WHERE pet_id = $1", [req.params.id]);
     await run("DELETE FROM pets WHERE id = $1", [req.params.id]);
     res.json({ message: 'Pet deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// ================== PET PHOTO ==================
+
+app.post('/api/pets/:id/photo', auth, upload.single('photo'), async (req, res) => {
+  try {
+    const pet = await queryOne("SELECT id FROM pets WHERE id = $1 AND owner_id = $2", [req.params.id, req.userId]);
+    if (!pet) return res.status(404).json({ error: 'Pet not found' });
+    
+    if (!req.file) return res.status(400).json({ error: 'No photo uploaded' });
+    
+    const photoData = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    await run("UPDATE pets SET photo_data = $1 WHERE id = $2", [photoData, req.params.id]);
+    
+    res.json({ success: true, photoData });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/pets/:id/photo', auth, async (req, res) => {
+  try {
+    const pet = await queryOne("SELECT id FROM pets WHERE id = $1 AND owner_id = $2", [req.params.id, req.userId]);
+    if (!pet) return res.status(404).json({ error: 'Pet not found' });
+    
+    await run("UPDATE pets SET photo_data = NULL WHERE id = $1", [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ================== MEDICAL IMAGES ==================
+
+app.post('/api/pets/:id/images', auth, upload.single('image'), async (req, res) => {
+  try {
+    const pet = await queryOne("SELECT id FROM pets WHERE id = $1 AND owner_id = $2", [req.params.id, req.userId]);
+    if (!pet) return res.status(404).json({ error: 'Pet not found' });
+    
+    if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
+    
+    const { modality, bodyPart, description, studyDate } = req.body;
+    const filename = req.file.originalname;
+    const isDicom = filename.toLowerCase().endsWith('.dcm') || req.file.mimetype === 'application/dicom';
+    const imageType = isDicom ? 'DICOM' : 'JPEG';
+    
+    const imageData = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    
+    const id = uuidv4();
+    await run(
+      "INSERT INTO medical_images (id, pet_id, filename, image_type, modality, body_part, description, image_data, study_date, uploaded_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)",
+      [id, req.params.id, filename, imageType, modality || 'Unknown', bodyPart || '', description || '', imageData, studyDate || new Date().toISOString().split('T')[0]]
+    );
+    
+    res.json({ id, filename, imageType, modality, bodyPart, description, studyDate });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/pets/:id/images', auth, async (req, res) => {
+  try {
+    const pet = await queryOne("SELECT id FROM pets WHERE id = $1 AND owner_id = $2", [req.params.id, req.userId]);
+    if (!pet) return res.status(404).json({ error: 'Pet not found' });
+    
+    const images = await query("SELECT id, filename, image_type, modality, body_part, description, study_date, uploaded_at FROM medical_images WHERE pet_id = $1 ORDER BY study_date DESC", [req.params.id]);
+    res.json(images);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/images/:id', auth, async (req, res) => {
+  try {
+    const image = await queryOne("SELECT mi.*, p.owner_id FROM medical_images mi JOIN pets p ON mi.pet_id = p.id WHERE mi.id = $1", [req.params.id]);
+    if (!image || image.owner_id !== req.userId) return res.status(404).json({ error: 'Image not found' });
+    
+    res.json(image);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/images/:id', auth, async (req, res) => {
+  try {
+    const image = await queryOne("SELECT mi.id, p.owner_id FROM medical_images mi JOIN pets p ON mi.pet_id = p.id WHERE mi.id = $1", [req.params.id]);
+    if (!image || image.owner_id !== req.userId) return res.status(404).json({ error: 'Image not found' });
+    
+    await run("DELETE FROM medical_images WHERE id = $1", [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ================== DELETE INDIVIDUAL RECORDS ==================
+
+app.delete('/api/allergies/:id', auth, async (req, res) => {
+  try {
+    const allergy = await queryOne("SELECT a.id FROM allergies a JOIN pets p ON a.pet_id = p.id WHERE a.id = $1 AND p.owner_id = $2", [req.params.id, req.userId]);
+    if (!allergy) return res.status(404).json({ error: 'Not found' });
+    await run("DELETE FROM allergies WHERE id = $1", [req.params.id]);
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.delete('/api/conditions/:id', auth, async (req, res) => {
+  try {
+    const condition = await queryOne("SELECT c.id FROM conditions c JOIN pets p ON c.pet_id = p.id WHERE c.id = $1 AND p.owner_id = $2", [req.params.id, req.userId]);
+    if (!condition) return res.status(404).json({ error: 'Not found' });
+    await run("DELETE FROM conditions WHERE id = $1", [req.params.id]);
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.delete('/api/medications/:id', auth, async (req, res) => {
+  try {
+    const med = await queryOne("SELECT m.id FROM medications m JOIN pets p ON m.pet_id = p.id WHERE m.id = $1 AND p.owner_id = $2", [req.params.id, req.userId]);
+    if (!med) return res.status(404).json({ error: 'Not found' });
+    await run("DELETE FROM medications WHERE id = $1", [req.params.id]);
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.delete('/api/vaccinations/:id', auth, async (req, res) => {
+  try {
+    const vax = await queryOne("SELECT v.id FROM vaccinations v JOIN pets p ON v.pet_id = p.id WHERE v.id = $1 AND p.owner_id = $2", [req.params.id, req.userId]);
+    if (!vax) return res.status(404).json({ error: 'Not found' });
+    await run("DELETE FROM vaccinations WHERE id = $1", [req.params.id]);
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.delete('/api/records/:id', auth, async (req, res) => {
+  try {
+    const record = await queryOne("SELECT r.id FROM medical_records r JOIN pets p ON r.pet_id = p.id WHERE r.id = $1 AND p.owner_id = $2", [req.params.id, req.userId]);
+    if (!record) return res.status(404).json({ error: 'Not found' });
+    await run("DELETE FROM medical_records WHERE id = $1", [req.params.id]);
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.delete('/api/labs/:id', auth, async (req, res) => {
+  try {
+    const lab = await queryOne("SELECT l.id FROM lab_results l JOIN pets p ON l.pet_id = p.id WHERE l.id = $1 AND p.owner_id = $2", [req.params.id, req.userId]);
+    if (!lab) return res.status(404).json({ error: 'Not found' });
+    await run("DELETE FROM lab_results WHERE id = $1", [req.params.id]);
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.delete('/api/documents/:id', auth, async (req, res) => {
+  try {
+    const doc = await queryOne("SELECT d.id FROM documents d JOIN pets p ON d.pet_id = p.id WHERE d.id = $1 AND p.owner_id = $2", [req.params.id, req.userId]);
+    if (!doc) return res.status(404).json({ error: 'Not found' });
+    await run("DELETE FROM documents WHERE id = $1", [req.params.id]);
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.delete('/api/recordings/:id', auth, async (req, res) => {
+  try {
+    const rec = await queryOne("SELECT r.id FROM recordings r JOIN pets p ON r.pet_id = p.id WHERE r.id = $1 AND p.owner_id = $2", [req.params.id, req.userId]);
+    if (!rec) return res.status(404).json({ error: 'Not found' });
+    await run("DELETE FROM recordings WHERE id = $1", [req.params.id]);
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 // ================== TIMELINE ==================
