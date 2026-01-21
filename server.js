@@ -10,6 +10,7 @@ const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const axios = require('axios');
 const FormData = require('form-data');
+const PDFDocument = require('pdfkit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -773,6 +774,561 @@ app.get('/api/status', (req, res) => res.json({
   aiEnabled: !!ANTHROPIC_API_KEY,
   voiceEnabled: !!OPENAI_API_KEY
 }));
+
+// ================== EXPORTS ==================
+
+// Generate insurance claim export
+app.post('/api/pets/:id/export/insurance-claim', auth, async (req, res) => {
+  try {
+    const pet = await queryOne("SELECT * FROM pets WHERE id = $1 AND owner_id = $2", [req.params.id, req.userId]);
+    if (!pet) return res.status(404).json({ error: 'Pet not found' });
+    
+    const user = await queryOne("SELECT * FROM users WHERE id = $1", [req.userId]);
+    const { startDate, endDate, claimReason, includeRecords } = req.body;
+    
+    // Gather all relevant data
+    const [records, medications, vaccinations, labs, conditions, allergies] = await Promise.all([
+      query("SELECT * FROM medical_records WHERE pet_id = $1 AND ($2::text IS NULL OR date_of_service >= $2) AND ($3::text IS NULL OR date_of_service <= $3) ORDER BY date_of_service DESC", [pet.id, startDate || null, endDate || null]),
+      query("SELECT * FROM medications WHERE pet_id = $1", [pet.id]),
+      query("SELECT * FROM vaccinations WHERE pet_id = $1", [pet.id]),
+      query("SELECT * FROM lab_results WHERE pet_id = $1", [pet.id]),
+      query("SELECT * FROM conditions WHERE pet_id = $1", [pet.id]),
+      query("SELECT * FROM allergies WHERE pet_id = $1", [pet.id])
+    ]);
+    
+    // Generate claim document using Claude
+    if (!ANTHROPIC_API_KEY) {
+      return res.status(503).json({ error: 'AI not configured for document generation' });
+    }
+    
+    const prompt = `Generate a professional pet insurance claim summary document. Use this data:
+
+PATIENT INFORMATION:
+- Name: ${pet.name}
+- Species: ${pet.species}
+- Breed: ${pet.breed || 'Unknown'}
+- Sex: ${pet.sex || 'Unknown'}
+- Date of Birth: ${pet.date_of_birth || 'Unknown'}
+- Weight: ${pet.weight_kg ? pet.weight_kg + ' kg' : 'Unknown'}
+- Microchip: ${pet.microchip_id || 'None on file'}
+
+OWNER INFORMATION:
+- Name: ${user.first_name} ${user.last_name}
+- Email: ${user.email}
+
+CLAIM DETAILS:
+- Claim Period: ${startDate || 'All records'} to ${endDate || 'Present'}
+- Reason for Claim: ${claimReason || 'Medical expenses reimbursement'}
+
+KNOWN CONDITIONS:
+${conditions.map(c => `- ${c.condition} (${c.status}, diagnosed ${c.diagnosed_date || 'unknown date'})`).join('\n') || 'None on file'}
+
+KNOWN ALLERGIES:
+${allergies.map(a => `- ${a.allergen}: ${a.reaction || 'reaction not specified'} (${a.severity || 'severity unknown'})`).join('\n') || 'None on file'}
+
+CURRENT MEDICATIONS:
+${medications.filter(m => m.status === 'ACTIVE').map(m => `- ${m.drug_name} ${m.dose || ''} ${m.frequency || ''} - ${m.indication || 'indication not specified'}`).join('\n') || 'None'}
+
+MEDICAL RECORDS FOR CLAIM PERIOD:
+${records.map(r => `
+Date: ${r.date_of_service}
+Facility: ${r.facility_name || 'Not specified'}
+Provider: ${r.provider_name || 'Not specified'}
+Type: ${r.record_type}
+Chief Complaint: ${r.chief_complaint || 'N/A'}
+Diagnosis: ${r.diagnosis || 'N/A'}
+Treatment: ${r.treatment || 'N/A'}
+Summary: ${r.summary || 'N/A'}
+`).join('\n---\n') || 'No records in this period'}
+
+RELEVANT LAB RESULTS:
+${labs.map(l => `- ${l.panel_name} (${l.collection_date}): ${l.interpretation || 'See detailed results'}`).join('\n') || 'None'}
+
+Generate a well-formatted insurance claim summary document that includes:
+1. A header with "PET INSURANCE CLAIM SUMMARY" and date generated
+2. Patient and owner information section
+3. Claim period and reason
+4. Medical history summary relevant to the claim
+5. Itemized list of visits/treatments during claim period
+6. Current medications related to claim
+7. Supporting documentation checklist
+8. Owner certification statement
+
+Format it professionally with clear sections. Use plain text formatting (no markdown).`;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    
+    if (!response.ok) throw new Error('Failed to generate document');
+    const data = await response.json();
+    const documentText = data.content[0].text;
+    
+    res.json({
+      success: true,
+      document: documentText,
+      metadata: {
+        petName: pet.name,
+        generatedAt: new Date().toISOString(),
+        recordCount: records.length,
+        dateRange: { start: startDate, end: endDate }
+      }
+    });
+    
+  } catch (error) {
+    console.error('Insurance export error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Generate referral summary for specialists
+app.post('/api/pets/:id/export/referral-summary', auth, async (req, res) => {
+  try {
+    const pet = await queryOne("SELECT * FROM pets WHERE id = $1 AND owner_id = $2", [req.params.id, req.userId]);
+    if (!pet) return res.status(404).json({ error: 'Pet not found' });
+    
+    const user = await queryOne("SELECT * FROM users WHERE id = $1", [req.userId]);
+    const { referralReason, referringVet, specialtyType, urgency, additionalNotes } = req.body;
+    
+    // Gather comprehensive patient data
+    const [records, medications, vaccinations, labs, conditions, allergies, weights] = await Promise.all([
+      query("SELECT * FROM medical_records WHERE pet_id = $1 ORDER BY date_of_service DESC LIMIT 10", [pet.id]),
+      query("SELECT * FROM medications WHERE pet_id = $1", [pet.id]),
+      query("SELECT * FROM vaccinations WHERE pet_id = $1 ORDER BY administration_date DESC", [pet.id]),
+      query("SELECT * FROM lab_results WHERE pet_id = $1 ORDER BY collection_date DESC LIMIT 5", [pet.id]),
+      query("SELECT * FROM conditions WHERE pet_id = $1", [pet.id]),
+      query("SELECT * FROM allergies WHERE pet_id = $1", [pet.id]),
+      query("SELECT * FROM weight_records WHERE pet_id = $1 ORDER BY date DESC LIMIT 5", [pet.id])
+    ]);
+    
+    if (!ANTHROPIC_API_KEY) {
+      return res.status(503).json({ error: 'AI not configured for document generation' });
+    }
+    
+    const prompt = `Generate a professional veterinary referral summary letter. Use this data:
+
+PATIENT SIGNALMENT:
+- Name: ${pet.name}
+- Species: ${pet.species}
+- Breed: ${pet.breed || 'Unknown'}
+- Sex: ${pet.sex || 'Unknown'}
+- Date of Birth: ${pet.date_of_birth || 'Unknown'} ${pet.date_of_birth ? `(${calculateAge(pet.date_of_birth)})` : ''}
+- Weight: ${pet.weight_kg ? pet.weight_kg + ' kg' : 'Unknown'}
+- Microchip: ${pet.microchip_id || 'None'}
+
+OWNER:
+- ${user.first_name} ${user.last_name}
+- ${user.email}
+
+REFERRAL DETAILS:
+- Reason for Referral: ${referralReason || 'Specialist consultation requested'}
+- Referring Veterinarian: ${referringVet || 'Primary care veterinarian'}
+- Specialty: ${specialtyType || 'Not specified'}
+- Urgency: ${urgency || 'Routine'}
+
+ADDITIONAL NOTES FROM OWNER:
+${additionalNotes || 'None provided'}
+
+PROBLEM LIST / ACTIVE CONDITIONS:
+${conditions.filter(c => c.status === 'active' || c.status === 'managed').map(c => `- ${c.condition} (${c.status}, diagnosed ${c.diagnosed_date || 'unknown'})`).join('\n') || 'None documented'}
+
+ALLERGIES/ADVERSE REACTIONS:
+${allergies.map(a => `- ${a.allergen}: ${a.reaction || 'unknown reaction'} (Severity: ${a.severity || 'unknown'})`).join('\n') || 'NKDA (No Known Drug Allergies)'}
+
+CURRENT MEDICATIONS:
+${medications.filter(m => m.status === 'ACTIVE').map(m => `- ${m.drug_name} ${m.dose || ''} ${m.frequency || ''} for ${m.indication || 'unspecified indication'} (Started: ${m.start_date || 'unknown'})`).join('\n') || 'None'}
+
+DISCONTINUED MEDICATIONS:
+${medications.filter(m => m.status !== 'ACTIVE').map(m => `- ${m.drug_name} - ${m.indication || 'unspecified'}`).join('\n') || 'None documented'}
+
+VACCINATION STATUS:
+${vaccinations.slice(0, 5).map(v => `- ${v.vaccine_name}: ${v.administration_date} (Valid until: ${v.valid_until || 'unknown'})`).join('\n') || 'None on file'}
+
+WEIGHT HISTORY:
+${weights.map(w => `- ${w.date}: ${w.weight_kg} kg`).join('\n') || 'No weight history'}
+
+RECENT MEDICAL HISTORY:
+${records.map(r => `
+${r.date_of_service} - ${r.record_type} at ${r.facility_name || 'Unknown facility'}
+Provider: ${r.provider_name || 'Not specified'}
+Chief Complaint: ${r.chief_complaint || 'N/A'}
+Diagnosis: ${r.diagnosis || 'N/A'}
+Treatment: ${r.treatment || 'N/A'}
+Notes: ${r.summary || r.notes || 'N/A'}
+`).join('\n---\n') || 'No recent records'}
+
+RECENT LABORATORY RESULTS:
+${labs.map(l => {
+  const results = JSON.parse(l.results || '[]');
+  return `${l.collection_date} - ${l.panel_name}
+${results.map(r => `  ${r.test}: ${r.value} ${r.unit || ''} (Ref: ${r.range || 'N/A'})${r.flag ? ' **' + r.flag + '**' : ''}`).join('\n')}
+Interpretation: ${l.interpretation || 'None provided'}`;
+}).join('\n\n') || 'No recent labs'}
+
+Generate a professional referral letter that a specialist would expect to receive. Include:
+1. Header with "VETERINARY REFERRAL SUMMARY" and date
+2. Patient signalment in standard format
+3. Owner contact information
+4. Reason for referral (prominent)
+5. Pertinent medical history summary
+6. Current problem list
+7. Allergies (highlighted if any drug allergies)
+8. Current medications with doses
+9. Relevant recent diagnostics summary
+10. Vaccination status
+11. Specific questions or concerns for the specialist
+
+Format professionally. Flag any critical information (allergies, urgent findings). Use plain text.`;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    
+    if (!response.ok) throw new Error('Failed to generate document');
+    const data = await response.json();
+    const documentText = data.content[0].text;
+    
+    res.json({
+      success: true,
+      document: documentText,
+      metadata: {
+        petName: pet.name,
+        generatedAt: new Date().toISOString(),
+        referralType: specialtyType,
+        urgency: urgency
+      }
+    });
+    
+  } catch (error) {
+    console.error('Referral export error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Helper to calculate age
+function calculateAge(dob) {
+  const birth = new Date(dob);
+  const now = new Date();
+  const years = now.getFullYear() - birth.getFullYear();
+  const months = now.getMonth() - birth.getMonth();
+  if (years === 0) return `${months} months`;
+  if (months < 0) return `${years - 1} years`;
+  return `${years} years`;
+}
+
+// Generate Insurance Claim PDF
+app.post('/api/pets/:id/export/insurance-claim/pdf', auth, async (req, res) => {
+  try {
+    const pet = await queryOne("SELECT * FROM pets WHERE id = $1 AND owner_id = $2", [req.params.id, req.userId]);
+    if (!pet) return res.status(404).json({ error: 'Pet not found' });
+    
+    const user = await queryOne("SELECT * FROM users WHERE id = $1", [req.userId]);
+    const { startDate, endDate, claimReason, insuranceCompany, policyNumber } = req.body;
+    
+    const [records, medications, vaccinations, labs, conditions, allergies] = await Promise.all([
+      query("SELECT * FROM medical_records WHERE pet_id = $1 AND ($2::text IS NULL OR date_of_service >= $2) AND ($3::text IS NULL OR date_of_service <= $3) ORDER BY date_of_service DESC", [pet.id, startDate || null, endDate || null]),
+      query("SELECT * FROM medications WHERE pet_id = $1", [pet.id]),
+      query("SELECT * FROM vaccinations WHERE pet_id = $1", [pet.id]),
+      query("SELECT * FROM lab_results WHERE pet_id = $1", [pet.id]),
+      query("SELECT * FROM conditions WHERE pet_id = $1", [pet.id]),
+      query("SELECT * FROM allergies WHERE pet_id = $1", [pet.id])
+    ]);
+    
+    // Generate PDF
+    const doc = new PDFDocument({ margin: 50 });
+    const chunks = [];
+    doc.on('data', chunk => chunks.push(chunk));
+    doc.on('end', () => {
+      const pdfBuffer = Buffer.concat(chunks);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${pet.name}-insurance-claim-${new Date().toISOString().split('T')[0]}.pdf"`);
+      res.send(pdfBuffer);
+    });
+    
+    // Header
+    doc.fontSize(20).font('Helvetica-Bold').text('PET INSURANCE CLAIM SUMMARY', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(10).font('Helvetica').text(`Generated: ${new Date().toLocaleDateString()}`, { align: 'center' });
+    doc.moveDown();
+    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+    doc.moveDown();
+    
+    // Insurance Info
+    if (insuranceCompany || policyNumber) {
+      doc.fontSize(12).font('Helvetica-Bold').text('INSURANCE INFORMATION');
+      doc.fontSize(10).font('Helvetica');
+      if (insuranceCompany) doc.text(`Company: ${insuranceCompany}`);
+      if (policyNumber) doc.text(`Policy Number: ${policyNumber}`);
+      doc.moveDown();
+    }
+    
+    // Patient Info
+    doc.fontSize(12).font('Helvetica-Bold').text('PATIENT INFORMATION');
+    doc.fontSize(10).font('Helvetica');
+    doc.text(`Name: ${pet.name}`);
+    doc.text(`Species: ${pet.species === 'DOG' ? 'Canine' : pet.species === 'CAT' ? 'Feline' : pet.species}`);
+    doc.text(`Breed: ${pet.breed || 'Unknown'}`);
+    doc.text(`Sex: ${pet.sex || 'Unknown'}`);
+    doc.text(`Date of Birth: ${pet.date_of_birth || 'Unknown'}${pet.date_of_birth ? ` (${calculateAge(pet.date_of_birth)})` : ''}`);
+    doc.text(`Weight: ${pet.weight_kg ? pet.weight_kg + ' kg' : 'Unknown'}`);
+    doc.text(`Microchip: ${pet.microchip_id || 'None on file'}`);
+    doc.moveDown();
+    
+    // Owner Info
+    doc.fontSize(12).font('Helvetica-Bold').text('OWNER INFORMATION');
+    doc.fontSize(10).font('Helvetica');
+    doc.text(`Name: ${user.first_name} ${user.last_name}`);
+    doc.text(`Email: ${user.email}`);
+    doc.moveDown();
+    
+    // Claim Details
+    doc.fontSize(12).font('Helvetica-Bold').text('CLAIM DETAILS');
+    doc.fontSize(10).font('Helvetica');
+    doc.text(`Claim Period: ${startDate || 'All records'} to ${endDate || 'Present'}`);
+    doc.text(`Reason: ${claimReason || 'Medical expenses reimbursement'}`);
+    doc.moveDown();
+    
+    // Conditions
+    doc.fontSize(12).font('Helvetica-Bold').text('KNOWN CONDITIONS');
+    doc.fontSize(10).font('Helvetica');
+    if (conditions.length === 0) {
+      doc.text('None on file');
+    } else {
+      conditions.forEach(c => doc.text(`• ${c.condition} (${c.status}, diagnosed ${c.diagnosed_date || 'unknown'})`));
+    }
+    doc.moveDown();
+    
+    // Allergies
+    doc.fontSize(12).font('Helvetica-Bold').text('ALLERGIES');
+    doc.fontSize(10).font('Helvetica');
+    if (allergies.length === 0) {
+      doc.text('None on file');
+    } else {
+      allergies.forEach(a => doc.text(`• ${a.allergen}: ${a.reaction || 'unknown reaction'} (${a.severity || 'unknown severity'})`));
+    }
+    doc.moveDown();
+    
+    // Medical Records
+    doc.fontSize(12).font('Helvetica-Bold').text('MEDICAL RECORDS FOR CLAIM PERIOD');
+    doc.fontSize(10).font('Helvetica');
+    if (records.length === 0) {
+      doc.text('No records in this period');
+    } else {
+      records.forEach((r, i) => {
+        if (i > 0) doc.moveDown(0.5);
+        doc.font('Helvetica-Bold').text(`${r.date_of_service} - ${r.record_type}`);
+        doc.font('Helvetica');
+        doc.text(`Facility: ${r.facility_name || 'Not specified'}`);
+        doc.text(`Provider: ${r.provider_name || 'Not specified'}`);
+        if (r.chief_complaint) doc.text(`Chief Complaint: ${r.chief_complaint}`);
+        if (r.diagnosis) doc.text(`Diagnosis: ${r.diagnosis}`);
+        if (r.treatment) doc.text(`Treatment: ${r.treatment}`);
+        if (r.summary) doc.text(`Summary: ${r.summary}`);
+      });
+    }
+    doc.moveDown();
+    
+    // Medications
+    doc.fontSize(12).font('Helvetica-Bold').text('CURRENT MEDICATIONS');
+    doc.fontSize(10).font('Helvetica');
+    const activeMeds = medications.filter(m => m.status === 'ACTIVE');
+    if (activeMeds.length === 0) {
+      doc.text('None');
+    } else {
+      activeMeds.forEach(m => doc.text(`• ${m.drug_name} ${m.dose || ''} ${m.frequency || ''} - ${m.indication || ''}`));
+    }
+    doc.moveDown();
+    
+    // Certification
+    doc.moveDown();
+    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+    doc.moveDown();
+    doc.fontSize(10).font('Helvetica-Bold').text('CERTIFICATION');
+    doc.fontSize(9).font('Helvetica');
+    doc.text('I certify that the information provided in this claim summary is accurate to the best of my knowledge.');
+    doc.moveDown();
+    doc.text('Owner Signature: _________________________    Date: _____________');
+    
+    doc.end();
+    
+  } catch (error) {
+    console.error('Insurance PDF error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Generate Referral Summary PDF
+app.post('/api/pets/:id/export/referral-summary/pdf', auth, async (req, res) => {
+  try {
+    const pet = await queryOne("SELECT * FROM pets WHERE id = $1 AND owner_id = $2", [req.params.id, req.userId]);
+    if (!pet) return res.status(404).json({ error: 'Pet not found' });
+    
+    const user = await queryOne("SELECT * FROM users WHERE id = $1", [req.userId]);
+    const { referralReason, referringVet, referringClinic, specialtyType, urgency, additionalNotes } = req.body;
+    
+    const [records, medications, vaccinations, labs, conditions, allergies, weights] = await Promise.all([
+      query("SELECT * FROM medical_records WHERE pet_id = $1 ORDER BY date_of_service DESC LIMIT 10", [pet.id]),
+      query("SELECT * FROM medications WHERE pet_id = $1", [pet.id]),
+      query("SELECT * FROM vaccinations WHERE pet_id = $1 ORDER BY administration_date DESC", [pet.id]),
+      query("SELECT * FROM lab_results WHERE pet_id = $1 ORDER BY collection_date DESC LIMIT 5", [pet.id]),
+      query("SELECT * FROM conditions WHERE pet_id = $1", [pet.id]),
+      query("SELECT * FROM allergies WHERE pet_id = $1", [pet.id]),
+      query("SELECT * FROM weight_records WHERE pet_id = $1 ORDER BY date DESC LIMIT 5", [pet.id])
+    ]);
+    
+    const doc = new PDFDocument({ margin: 50 });
+    const chunks = [];
+    doc.on('data', chunk => chunks.push(chunk));
+    doc.on('end', () => {
+      const pdfBuffer = Buffer.concat(chunks);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${pet.name}-referral-summary-${new Date().toISOString().split('T')[0]}.pdf"`);
+      res.send(pdfBuffer);
+    });
+    
+    // Header
+    doc.fontSize(20).font('Helvetica-Bold').text('VETERINARY REFERRAL SUMMARY', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(10).font('Helvetica').text(`Generated: ${new Date().toLocaleDateString()}`, { align: 'center' });
+    doc.moveDown();
+    
+    // Urgency banner if urgent
+    if (urgency === 'urgent' || urgency === 'emergency') {
+      doc.rect(50, doc.y, 500, 25).fill(urgency === 'emergency' ? '#dc2626' : '#f59e0b');
+      doc.fill('#ffffff').fontSize(12).font('Helvetica-Bold').text(`URGENCY: ${urgency.toUpperCase()}`, 60, doc.y - 20);
+      doc.fill('#000000');
+      doc.moveDown();
+    }
+    
+    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+    doc.moveDown();
+    
+    // Referral Info
+    doc.fontSize(12).font('Helvetica-Bold').text('REFERRAL INFORMATION');
+    doc.fontSize(10).font('Helvetica');
+    doc.text(`Reason for Referral: ${referralReason || 'Specialist consultation requested'}`);
+    doc.text(`Specialty: ${specialtyType || 'Not specified'}`);
+    doc.text(`Urgency: ${urgency || 'Routine'}`);
+    if (referringVet) doc.text(`Referring Veterinarian: ${referringVet}`);
+    if (referringClinic) doc.text(`Referring Clinic: ${referringClinic}`);
+    doc.moveDown();
+    
+    // Patient Signalment
+    doc.fontSize(12).font('Helvetica-Bold').text('PATIENT SIGNALMENT');
+    doc.fontSize(10).font('Helvetica');
+    doc.text(`Name: ${pet.name}`);
+    doc.text(`Species: ${pet.species === 'DOG' ? 'Canine' : pet.species === 'CAT' ? 'Feline' : pet.species}`);
+    doc.text(`Breed: ${pet.breed || 'Unknown'}`);
+    doc.text(`Sex: ${pet.sex || 'Unknown'}`);
+    doc.text(`Age: ${pet.date_of_birth ? calculateAge(pet.date_of_birth) : 'Unknown'} (DOB: ${pet.date_of_birth || 'Unknown'})`);
+    doc.text(`Weight: ${pet.weight_kg ? pet.weight_kg + ' kg' : 'Unknown'}`);
+    doc.text(`Microchip: ${pet.microchip_id || 'None'}`);
+    doc.moveDown();
+    
+    // Owner
+    doc.fontSize(12).font('Helvetica-Bold').text('OWNER CONTACT');
+    doc.fontSize(10).font('Helvetica');
+    doc.text(`${user.first_name} ${user.last_name}`);
+    doc.text(`${user.email}`);
+    doc.moveDown();
+    
+    // Allergies - highlighted if present
+    doc.fontSize(12).font('Helvetica-Bold').text('ALLERGIES / ADVERSE REACTIONS');
+    doc.fontSize(10).font('Helvetica');
+    if (allergies.length === 0) {
+      doc.text('NKDA (No Known Drug Allergies)');
+    } else {
+      doc.fillColor('#dc2626');
+      allergies.forEach(a => doc.text(`⚠ ${a.allergen}: ${a.reaction || 'unknown'} (${a.severity || 'unknown severity'})`));
+      doc.fillColor('#000000');
+    }
+    doc.moveDown();
+    
+    // Problem List
+    doc.fontSize(12).font('Helvetica-Bold').text('PROBLEM LIST / ACTIVE CONDITIONS');
+    doc.fontSize(10).font('Helvetica');
+    const activeConditions = conditions.filter(c => c.status === 'active' || c.status === 'managed');
+    if (activeConditions.length === 0) {
+      doc.text('None documented');
+    } else {
+      activeConditions.forEach(c => doc.text(`• ${c.condition} (${c.status}, diagnosed ${c.diagnosed_date || 'unknown'})`));
+    }
+    doc.moveDown();
+    
+    // Current Medications
+    doc.fontSize(12).font('Helvetica-Bold').text('CURRENT MEDICATIONS');
+    doc.fontSize(10).font('Helvetica');
+    const activeMeds = medications.filter(m => m.status === 'ACTIVE');
+    if (activeMeds.length === 0) {
+      doc.text('None');
+    } else {
+      activeMeds.forEach(m => doc.text(`• ${m.drug_name} ${m.dose || ''} ${m.frequency || ''} for ${m.indication || 'unspecified'}`));
+    }
+    doc.moveDown();
+    
+    // Vaccination Status
+    doc.fontSize(12).font('Helvetica-Bold').text('VACCINATION STATUS');
+    doc.fontSize(10).font('Helvetica');
+    if (vaccinations.length === 0) {
+      doc.text('None on file');
+    } else {
+      vaccinations.slice(0, 6).forEach(v => {
+        const isExpired = v.valid_until && new Date(v.valid_until) < new Date();
+        doc.text(`• ${v.vaccine_name}: ${v.administration_date}${v.valid_until ? ` (Valid until: ${v.valid_until}${isExpired ? ' - EXPIRED' : ''})` : ''}`);
+      });
+    }
+    doc.moveDown();
+    
+    // Recent History
+    doc.fontSize(12).font('Helvetica-Bold').text('RECENT MEDICAL HISTORY');
+    doc.fontSize(10).font('Helvetica');
+    if (records.length === 0) {
+      doc.text('No recent records');
+    } else {
+      records.slice(0, 5).forEach((r, i) => {
+        if (i > 0) doc.moveDown(0.3);
+        doc.font('Helvetica-Bold').text(`${r.date_of_service} - ${r.record_type}`, { continued: false });
+        doc.font('Helvetica');
+        if (r.facility_name) doc.text(`  Facility: ${r.facility_name}`);
+        if (r.diagnosis) doc.text(`  Diagnosis: ${r.diagnosis}`);
+        if (r.treatment) doc.text(`  Treatment: ${r.treatment}`);
+      });
+    }
+    doc.moveDown();
+    
+    // Additional Notes
+    if (additionalNotes) {
+      doc.fontSize(12).font('Helvetica-Bold').text('ADDITIONAL NOTES FROM OWNER');
+      doc.fontSize(10).font('Helvetica');
+      doc.text(additionalNotes);
+      doc.moveDown();
+    }
+    
+    // Footer
+    doc.moveDown();
+    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+    doc.moveDown();
+    doc.fontSize(8).font('Helvetica').text('This referral summary was generated by PetRecord. Please verify all information with the pet owner.', { align: 'center' });
+    
+    doc.end();
+    
+  } catch (error) {
+    console.error('Referral PDF error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // ================== EMAIL FORWARDING ==================
 
