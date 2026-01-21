@@ -64,6 +64,8 @@
       Shield: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
       Chip: ({className="w-4 h-4"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>,
       Download: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+      Mail: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>,
+      Copy: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>,
       Mic: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8" strokeLinecap="round" strokeLinejoin="round"/></svg>,
       MicOff: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 1l22 22M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6"/><path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23M12 19v4M8 23h8" strokeLinecap="round" strokeLinejoin="round"/></svg>,
       Play: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
@@ -258,11 +260,12 @@
       const [pets, setPets] = useState([]);
       const [loading, setLoading] = useState(true);
       const [showAddPet, setShowAddPet] = useState(false);
+      const [showEmailSetup, setShowEmailSetup] = useState(false);
       const [aiEnabled, setAiEnabled] = useState(false);
 
       useEffect(() => {
         api.get('/api/pets').then(setPets).finally(() => setLoading(false));
-        api.get('/api/ai/status').then(data => setAiEnabled(data.enabled));
+        fetch('/api/status').then(r => r.json()).then(data => setAiEnabled(data.aiEnabled)).catch(() => {});
       }, []);
 
       const handleAddPet = async (petData) => { 
@@ -287,6 +290,7 @@
                 <h1 className="text-2xl font-bold text-slate-900">Welcome back, {user?.firstName}</h1>
                 <p className="text-slate-500">Manage your patients' health records</p>
               </div>
+              <button onClick={() => setShowEmailSetup(true)} className="px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 flex items-center gap-2 font-medium transition-colors"><Icons.Mail className="w-4 h-4" /> Email Forwarding</button>
               <button onClick={() => setShowAddPet(true)} className="px-5 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2 font-medium transition-colors"><Icons.Plus /> Add Patient</button>
             </div>
 
@@ -336,11 +340,116 @@
             )}
           </main>
           {showAddPet && <AddPetModal onClose={() => setShowAddPet(false)} onSave={handleAddPet} />}
+          {showEmailSetup && <EmailSetupModal onClose={() => setShowEmailSetup(false)} />}
         </div>
       );
     }
 
     // Add Pet Modal
+    // Email Setup Modal
+    function EmailSetupModal({ onClose }) {
+      const [emailData, setEmailData] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [copied, setCopied] = useState(false);
+
+      useEffect(() => {
+        api.get('/api/email/forwarding-address').then(data => {
+          setEmailData(data);
+          setLoading(false);
+        }).catch(() => setLoading(false));
+      }, []);
+
+      const copyAddress = () => {
+        navigator.clipboard.writeText(emailData?.forwardingAddress || '');
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      };
+
+      const regenerateAddress = async () => {
+        setLoading(true);
+        const data = await api.post('/api/email/regenerate-address', {});
+        setEmailData(data);
+        setLoading(false);
+      };
+
+      return (
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-slate-900">Email Forwarding</h2>
+              <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><Icons.X /></button>
+            </div>
+
+            <div className="mb-6 p-4 bg-primary-50 border border-primary-200 rounded-lg">
+              <p className="text-primary-800 text-sm">
+                <strong>Auto-import vet records!</strong> Forward emails from your vet to the address below. 
+                We'll automatically extract and save vaccination records, lab results, prescriptions, and more.
+              </p>
+            </div>
+
+            {loading ? (
+              <div className="py-8 text-center text-slate-500">Loading...</div>
+            ) : emailData ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Your Forwarding Address</label>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      readOnly 
+                      value={emailData.forwardingAddress} 
+                      className="flex-1 px-3 py-2.5 border border-slate-300 rounded-lg bg-slate-50 font-mono text-sm"
+                    />
+                    <button 
+                      onClick={copyAddress} 
+                      className="px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium flex items-center gap-2"
+                    >
+                      {copied ? <Icons.Check className="w-4 h-4" /> : <Icons.Copy className="w-4 h-4" />}
+                      {copied ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <h4 className="font-medium text-slate-900 mb-2">How it works:</h4>
+                  <ol className="text-sm text-slate-600 space-y-2">
+                    <li className="flex gap-2"><span className="bg-primary-100 text-primary-700 rounded-full w-5 h-5 flex items-center justify-center text-xs font-medium">1</span> Receive an email from your vet (appointment summary, lab results, etc.)</li>
+                    <li className="flex gap-2"><span className="bg-primary-100 text-primary-700 rounded-full w-5 h-5 flex items-center justify-center text-xs font-medium">2</span> Forward the email to your unique address above</li>
+                    <li className="flex gap-2"><span className="bg-primary-100 text-primary-700 rounded-full w-5 h-5 flex items-center justify-center text-xs font-medium">3</span> AI automatically extracts and saves the medical data</li>
+                    <li className="flex gap-2"><span className="bg-primary-100 text-primary-700 rounded-full w-5 h-5 flex items-center justify-center text-xs font-medium">4</span> View the new records in your pet's timeline</li>
+                  </ol>
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <h4 className="font-medium text-amber-800 mb-1">Works best with:</h4>
+                  <ul className="text-sm text-amber-700 space-y-1">
+                    <li>• Appointment summaries and discharge notes</li>
+                    <li>• Vaccination certificates</li>
+                    <li>• Lab result notifications</li>
+                    <li>• Prescription confirmations</li>
+                    <li>• PDF attachments from your vet</li>
+                  </ul>
+                </div>
+
+                <button 
+                  onClick={regenerateAddress}
+                  className="text-sm text-slate-500 hover:text-slate-700 underline"
+                >
+                  Generate new forwarding address
+                </button>
+              </div>
+            ) : (
+              <div className="py-8 text-center text-red-500">Failed to load forwarding address</div>
+            )}
+
+            <div className="mt-6 pt-4 border-t border-slate-200">
+              <button onClick={onClose} className="w-full px-4 py-2.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-medium">Done</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function AddPetModal({ onClose, onSave }) {
       const [form, setForm] = useState({ name: '', species: 'DOG', breed: '', sex: 'MALE', dateOfBirth: '', weightKg: '' });
       const [loading, setLoading] = useState(false);
