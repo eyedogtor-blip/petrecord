@@ -6,7 +6,7 @@ const QRCode = require('qrcode');
 const multer = require('multer');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const FormData = require('form-data');
+const OpenAI = require('openai');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -508,26 +508,21 @@ app.post('/api/pets/:id/recordings', auth, upload.single('audio'), async (req, r
     const title = req.body.title || `Exam Recording ${new Date().toLocaleDateString()}`;
     console.log(`Processing recording: ${title} (${duration}s, ${req.file.size} bytes)`);
     
-    // Transcribe with Whisper
-    const formData = new FormData();
-    formData.append('file', req.file.buffer, {
-      filename: 'recording.webm',
-      contentType: req.file.mimetype || 'audio/webm',
-      knownLength: req.file.buffer.length
-    });
-    formData.append('model', 'whisper-1');
+    // Transcribe with Whisper using OpenAI SDK
+    const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
     
-    const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { 
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        ...formData.getHeaders()
-      },
-      body: formData.getBuffer()
-    });
+    let transcript;
+    try {
+      const transcription = await openai.audio.transcriptions.create({
+        file: await OpenAI.toFile(req.file.buffer, 'recording.webm', { type: req.file.mimetype || 'audio/webm' }),
+        model: 'whisper-1',
+      });
+      transcript = transcription.text;
+    } catch (whisperError) {
+      console.error('Whisper error:', whisperError);
+      throw new Error(`Transcription failed: ${whisperError.message}`);
+    }
     
-    if (!whisperRes.ok) throw new Error(`Transcription failed: ${await whisperRes.text()}`);
-    const transcript = (await whisperRes.json()).text;
     console.log('Transcript:', transcript.substring(0, 200));
     
     // Summarize with Claude
