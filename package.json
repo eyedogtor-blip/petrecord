@@ -1,7 +1,7 @@
 {
   "name": "petrecord",
-  "version": "3.0.2",
-  "description": "Pet health record platform with AI document extraction, voice transcription, and PostgreSQL",
+  "version": "3.1.0",
+  "description": "Pet health record platform with AI extraction, voice transcription, and exports",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -17,7 +17,8 @@
     "qrcode": "^1.5.4",
     "uuid": "^10.0.0",
     "axios": "^1.6.0",
-    "form-data": "^4.0.0"
+    "form-data": "^4.0.0",
+    "pdfkit": "^0.15.0"
   },
   "engines": {
     "node": ">=18"
