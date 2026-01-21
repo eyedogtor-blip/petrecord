@@ -825,18 +825,20 @@
                     {medicalImages.map((img, i) => (
                       <div key={i} className="border border-slate-200 rounded-lg overflow-hidden group">
                         <div 
-                          className="aspect-square bg-slate-100 flex items-center justify-center cursor-pointer relative"
+                          className="aspect-square bg-slate-900 flex items-center justify-center cursor-pointer relative"
                           onClick={() => setSelectedImage(img)}
                         >
                           {img.image_type === 'DICOM' ? (
                             <div className="text-center p-4">
                               <Icons.FileText className="w-12 h-12 text-slate-400 mx-auto mb-2" />
-                              <span className="text-xs text-slate-500">DICOM</span>
+                              <span className="text-xs text-slate-400">DICOM</span>
                             </div>
+                          ) : img.image_data ? (
+                            <img src={img.image_data} alt={img.filename} className="w-full h-full object-contain" />
                           ) : (
                             <div className="text-center p-4">
                               <Icons.Image className="w-12 h-12 text-slate-400 mx-auto mb-2" />
-                              <span className="text-xs text-slate-500">Click to view</span>
+                              <span className="text-xs text-slate-400">Click to view</span>
                             </div>
                           )}
                           <button 
