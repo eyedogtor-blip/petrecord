@@ -983,7 +983,15 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok', db: 'postgresql' }
 
 // Serve public share page
 app.get('/share/:token', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'share.html'));
+  console.log('Share page requested for token:', req.params.token);
+  const sharePath = path.join(__dirname, 'public', 'share.html');
+  console.log('Serving file:', sharePath);
+  res.sendFile(sharePath, (err) => {
+    if (err) {
+      console.error('Error serving share.html:', err);
+      res.status(500).send('Error loading share page');
+    }
+  });
 });
 
 // Status endpoint for frontend
