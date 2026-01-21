@@ -126,9 +126,10 @@
           <div class="bg-gradient-to-r from-primary-600 to-accent-600 rounded-2xl p-6 mb-6 text-white shadow-lg">
             <div class="flex items-center justify-between flex-wrap gap-4">
               <div class="flex items-center gap-4">
-                <div class="p-3 bg-white/20 rounded-xl backdrop-blur">
-                  ${speciesIcon(pet.species)}
-                </div>
+                ${pet.photoData 
+                  ? `<img src="${pet.photoData}" alt="${pet.name}" class="w-16 h-16 rounded-xl object-cover" />`
+                  : `<div class="p-3 bg-white/20 rounded-xl backdrop-blur">${speciesIcon(pet.species)}</div>`
+                }
                 <div>
                   <h1 class="text-3xl font-bold">${pet.name}</h1>
                   <p class="opacity-90">${pet.breed || pet.species} · ${pet.sex?.replace(/_/g, ' ') || 'Unknown'} · ${pet.age || 'Age unknown'}</p>
