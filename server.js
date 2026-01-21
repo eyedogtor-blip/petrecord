@@ -636,11 +636,13 @@ app.get('/api/records/labs/pet/:petId', auth, async (req, res) => {
 
 // Get lab trends for charting
 app.get('/api/pets/:id/lab-trends', auth, async (req, res) => {
+  console.log('Lab trends requested for pet:', req.params.id);
   try {
     const pet = await queryOne("SELECT id FROM pets WHERE id = $1 AND owner_id = $2", [req.params.id, req.userId]);
     if (!pet) return res.status(404).json({ error: 'Pet not found' });
     
     const labs = await query("SELECT * FROM lab_results WHERE pet_id = $1 ORDER BY collection_date ASC", [req.params.id]);
+    console.log('Found', labs.length, 'lab results for pet');
     
     // Reference ranges for common tests
     const referenceRanges = {
@@ -1200,13 +1202,17 @@ function calculateAge(dob) {
 
 // Generate Insurance Claim PDF
 app.post('/api/pets/:id/export/insurance-claim/pdf', auth, async (req, res) => {
+  console.log('Insurance PDF requested for pet:', req.params.id);
   try {
     const pet = await queryOne("SELECT * FROM pets WHERE id = $1 AND owner_id = $2", [req.params.id, req.userId]);
     if (!pet) return res.status(404).json({ error: 'Pet not found' });
     
+    console.log('Generating insurance PDF for:', pet.name);
+    
     const user = await queryOne("SELECT * FROM users WHERE id = $1", [req.userId]);
     const { startDate, endDate, claimReason, insuranceCompany, policyNumber } = req.body;
     
+    console.log('Fetching data...');
     const [records, medications, vaccinations, labs, conditions, allergies] = await Promise.all([
       query("SELECT * FROM medical_records WHERE pet_id = $1 AND ($2::text IS NULL OR date_of_service >= $2) AND ($3::text IS NULL OR date_of_service <= $3) ORDER BY date_of_service DESC", [pet.id, startDate || null, endDate || null]),
       query("SELECT * FROM medications WHERE pet_id = $1", [pet.id]),
@@ -1216,7 +1222,11 @@ app.post('/api/pets/:id/export/insurance-claim/pdf', auth, async (req, res) => {
       query("SELECT * FROM allergies WHERE pet_id = $1", [pet.id])
     ]);
     
+    console.log('Data fetched. Records:', records.length);
+    console.log('Creating PDF document...');
+    
     // Generate PDF
+    const PDFDocument = require('pdfkit');
     const doc = new PDFDocument({ margin: 50 });
     const chunks = [];
     
@@ -1355,13 +1365,17 @@ app.post('/api/pets/:id/export/insurance-claim/pdf', auth, async (req, res) => {
 
 // Generate Referral Summary PDF
 app.post('/api/pets/:id/export/referral-summary/pdf', auth, async (req, res) => {
+  console.log('Referral PDF requested for pet:', req.params.id);
   try {
     const pet = await queryOne("SELECT * FROM pets WHERE id = $1 AND owner_id = $2", [req.params.id, req.userId]);
     if (!pet) return res.status(404).json({ error: 'Pet not found' });
     
+    console.log('Generating referral PDF for:', pet.name);
+    
     const user = await queryOne("SELECT * FROM users WHERE id = $1", [req.userId]);
     const { referralReason, referringVet, referringClinic, specialtyType, urgency, additionalNotes } = req.body;
     
+    console.log('Fetching pet data...');
     const [records, medications, vaccinations, labs, conditions, allergies, weights] = await Promise.all([
       query("SELECT * FROM medical_records WHERE pet_id = $1 ORDER BY date_of_service DESC LIMIT 10", [pet.id]),
       query("SELECT * FROM medications WHERE pet_id = $1", [pet.id]),
@@ -1372,6 +1386,10 @@ app.post('/api/pets/:id/export/referral-summary/pdf', auth, async (req, res) => 
       query("SELECT * FROM weight_records WHERE pet_id = $1 ORDER BY date DESC LIMIT 5", [pet.id])
     ]);
     
+    console.log('Data fetched. Records:', records.length, 'Meds:', medications.length);
+    console.log('Creating PDF document...');
+    
+    const PDFDocument = require('pdfkit');
     const doc = new PDFDocument({ margin: 50 });
     const chunks = [];
     
