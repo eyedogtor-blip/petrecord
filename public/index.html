@@ -69,6 +69,9 @@
       FileText: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
       TrendingUp: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>,
       BarChart: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>,
+      Camera: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>,
+      Trash: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>,
+      Image: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>,
       Mic: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8" strokeLinecap="round" strokeLinejoin="round"/></svg>,
       MicOff: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 1l22 22M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6"/><path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23M12 19v4M8 23h8" strokeLinecap="round" strokeLinejoin="round"/></svg>,
       Play: ({className="w-5 h-5"}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
@@ -577,26 +580,57 @@
       const [timeline, setTimeline] = useState([]);
       const [documents, setDocuments] = useState([]);
       const [recordings, setRecordings] = useState([]);
+      const [medicalImages, setMedicalImages] = useState([]);
       const [showShare, setShowShare] = useState(false);
       const [showUpload, setShowUpload] = useState(false);
       const [showRecord, setShowRecord] = useState(false);
+      const [showImageUpload, setShowImageUpload] = useState(false);
       const [selectedDoc, setSelectedDoc] = useState(null);
       const [selectedRecording, setSelectedRecording] = useState(null);
+      const [selectedImage, setSelectedImage] = useState(null);
       const [showInsuranceExport, setShowInsuranceExport] = useState(false);
       const [showReferralExport, setShowReferralExport] = useState(false);
       const [labTrends, setLabTrends] = useState(null);
+      const photoInputRef = React.useRef(null);
 
       const refreshPet = () => { 
         api.get(`/api/pets/${pet.id}`).then(setPet); 
         api.get(`/api/pets/${pet.id}/timeline`).then(setTimeline);
         api.get(`/api/pets/${pet.id}/documents`).then(setDocuments);
         api.get(`/api/pets/${pet.id}/recordings`).then(setRecordings);
+        api.get(`/api/pets/${pet.id}/images`).then(setMedicalImages).catch(() => setMedicalImages([]));
         api.get(`/api/pets/${pet.id}/lab-trends`).then(data => {
           console.log('Lab trends loaded:', data);
           setLabTrends(data);
         }).catch(err => console.error('Lab trends error:', err));
       };
       useEffect(() => { refreshPet(); }, [pet.id]);
+
+      const handlePhotoUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('photo', file);
+        try {
+          await api.upload(`/api/pets/${pet.id}/photo`, formData);
+          refreshPet();
+        } catch (err) {
+          alert('Failed to upload photo: ' + err.message);
+        }
+      };
+
+      const deleteItem = async (type, id, name) => {
+        if (!confirm(`Delete ${name || 'this item'}?`)) return;
+        try {
+          await fetch(`/api/${type}/${id}`, { 
+            method: 'DELETE', 
+            headers: { Authorization: `Bearer ${localStorage.getItem('petrecord_token')}` } 
+          });
+          refreshPet();
+        } catch (err) {
+          alert('Failed to delete: ' + err.message);
+        }
+      };
 
       const age = pet.dateOfBirth ? Math.floor((new Date() - new Date(pet.dateOfBirth)) / (365.25 * 24 * 60 * 60 * 1000)) : null;
 
@@ -608,7 +642,20 @@
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                 <div className="flex items-start gap-5">
-                  <div className="p-3 bg-primary-50 rounded-xl"><SpeciesIcon species={pet.species} size="lg" /></div>
+                  <div className="relative group">
+                    {pet.photoData ? (
+                      <img src={pet.photoData} alt={pet.name} className="w-20 h-20 rounded-xl object-cover" />
+                    ) : (
+                      <div className="w-20 h-20 p-4 bg-primary-50 rounded-xl flex items-center justify-center"><SpeciesIcon species={pet.species} size="lg" /></div>
+                    )}
+                    <button 
+                      onClick={() => photoInputRef.current?.click()}
+                      className="absolute inset-0 bg-black/50 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                    >
+                      <Icons.Camera className="w-6 h-6 text-white" />
+                    </button>
+                    <input type="file" ref={photoInputRef} onChange={handlePhotoUpload} accept="image/*" className="hidden" />
+                  </div>
                   <div>
                     <h1 className="text-2xl font-bold text-slate-900">{pet.name}</h1>
                     <p className="text-slate-600">{pet.breed}</p>
@@ -630,19 +677,26 @@
               </div>
             </div>
 
-            {/* Allergies */}
+            {/* Allergies - simplified, not prominent */}
             {pet.allergies?.length > 0 && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                <div className="flex items-center gap-2 text-red-800 font-semibold mb-2"><Icons.Alert className="w-5 h-5" /> Known Allergies</div>
-                <div className="flex flex-wrap gap-2">{pet.allergies.map((a, i) => <span key={i} className="px-3 py-1.5 bg-red-100 text-red-800 border border-red-200 rounded-full text-sm font-medium">{a.allergen} ({a.severity})</span>)}</div>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 text-amber-800 font-medium mb-2"><Icons.Alert className="w-4 h-4" /> Known Allergies</div>
+                <div className="flex flex-wrap gap-2">{pet.allergies.map((a, i) => (
+                  <span key={i} className="px-3 py-1.5 bg-amber-100 text-amber-800 rounded-full text-sm flex items-center gap-2">
+                    {a.allergen}
+                    <button onClick={() => deleteItem('allergies', a.id, a.allergen)} className="hover:text-red-600"><Icons.X className="w-3 h-3" /></button>
+                  </span>
+                ))}</div>
               </div>
             )}
 
             {/* Tabs */}
             <div className="flex gap-1 border-b border-slate-200 overflow-x-auto">
-              {['overview', 'timeline', 'lab trends', 'documents', 'recordings', 'medications', 'vaccinations'].map(tab => (
+              {['overview', 'timeline', 'lab trends', 'imaging', 'documents', 'recordings', 'medications', 'vaccinations'].map(tab => (
                 <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-3 font-medium capitalize whitespace-nowrap border-b-2 transition-colors ${activeTab === tab ? 'text-primary-600 border-primary-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
-                  {tab === 'lab trends' && <Icons.TrendingUp className="w-4 h-4 inline mr-1" />}{tab}
+                  {tab === 'lab trends' && <Icons.TrendingUp className="w-4 h-4 inline mr-1" />}
+                  {tab === 'imaging' && <Icons.Image className="w-4 h-4 inline mr-1" />}
+                  {tab}
                 </button>
               ))}
             </div>
@@ -653,13 +707,13 @@
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
                   <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2"><Icons.Heart className="w-5 h-5 text-primary-600" /> Chronic Conditions</h3>
                   {!pet.conditions?.length ? <p className="text-slate-400 text-sm">No chronic conditions recorded</p> : (
-                    <div className="space-y-3">{pet.conditions.map((c, i) => <div key={i} className="flex items-center justify-between"><span className="font-medium text-slate-900">{c.condition}</span><span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${c.status === 'active' ? 'bg-amber-100 text-amber-700' : 'bg-accent-100 text-accent-700'}`}>{c.status}</span></div>)}</div>
+                    <div className="space-y-3">{pet.conditions.map((c, i) => <div key={i} className="flex items-center justify-between"><span className="font-medium text-slate-900">{c.condition}</span><div className="flex items-center gap-2"><span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${c.status === 'active' ? 'bg-amber-100 text-amber-700' : 'bg-accent-100 text-accent-700'}`}>{c.status}</span><button onClick={() => deleteItem('conditions', c.id, c.condition)} className="text-slate-400 hover:text-red-600"><Icons.X className="w-4 h-4" /></button></div></div>)}</div>
                   )}
                 </div>
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
                   <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2"><Icons.Pill className="w-5 h-5 text-primary-600" /> Active Medications</h3>
                   {!pet.medications?.filter(m => m.status === 'ACTIVE').length ? <p className="text-slate-400 text-sm">No active medications</p> : (
-                    <div className="space-y-3">{pet.medications.filter(m => m.status === 'ACTIVE').map((m, i) => <div key={i} className="flex items-center justify-between text-sm"><div><span className="font-medium text-slate-900">{m.drug_name}</span>{m.dose && <span className="text-slate-500 ml-1">{m.dose}</span>}</div><span className="text-slate-500">{m.frequency}</span></div>)}</div>
+                    <div className="space-y-3">{pet.medications.filter(m => m.status === 'ACTIVE').map((m, i) => <div key={i} className="flex items-center justify-between text-sm"><div><span className="font-medium text-slate-900">{m.drug_name}</span>{m.dose && <span className="text-slate-500 ml-1">{m.dose}</span>}</div><div className="flex items-center gap-2"><span className="text-slate-500">{m.frequency}</span><button onClick={() => deleteItem('medications', m.id, m.drug_name)} className="text-slate-400 hover:text-red-600"><Icons.X className="w-4 h-4" /></button></div></div>)}</div>
                   )}
                 </div>
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
@@ -753,6 +807,57 @@
               </div>
             )}
 
+            {/* Imaging */}
+            {activeTab === 'imaging' && (
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200">
+                <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+                  <h3 className="font-semibold text-slate-900">Medical Images</h3>
+                  <button onClick={() => setShowImageUpload(true)} className="px-3 py-1.5 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 font-medium flex items-center gap-1"><Icons.Upload className="w-4 h-4" /> Upload Image</button>
+                </div>
+                {!medicalImages?.length ? (
+                  <div className="p-12 text-center">
+                    <Icons.Image className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                    <p className="text-slate-500 mb-2">No medical images uploaded</p>
+                    <p className="text-sm text-slate-400">Upload X-rays, ultrasounds, CT scans (JPEG or DICOM)</p>
+                  </div>
+                ) : (
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
+                    {medicalImages.map((img, i) => (
+                      <div key={i} className="border border-slate-200 rounded-lg overflow-hidden group">
+                        <div 
+                          className="aspect-square bg-slate-100 flex items-center justify-center cursor-pointer relative"
+                          onClick={() => setSelectedImage(img)}
+                        >
+                          {img.image_type === 'DICOM' ? (
+                            <div className="text-center p-4">
+                              <Icons.FileText className="w-12 h-12 text-slate-400 mx-auto mb-2" />
+                              <span className="text-xs text-slate-500">DICOM</span>
+                            </div>
+                          ) : (
+                            <div className="text-center p-4">
+                              <Icons.Image className="w-12 h-12 text-slate-400 mx-auto mb-2" />
+                              <span className="text-xs text-slate-500">Click to view</span>
+                            </div>
+                          )}
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); deleteItem('images', img.id, img.filename); }}
+                            className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Icons.Trash className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <div className="p-3">
+                          <p className="font-medium text-slate-900 text-sm truncate">{img.filename}</p>
+                          <p className="text-xs text-slate-500">{img.modality} · {img.body_part || 'Unspecified'}</p>
+                          <p className="text-xs text-slate-400">{img.study_date}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Medications */}
             {activeTab === 'medications' && (
               <div className="bg-white rounded-xl shadow-sm border border-slate-200">
@@ -761,7 +866,10 @@
                   <div className="divide-y divide-slate-100">{pet.medications.map((m, i) => (
                     <div key={i} className="p-5 flex items-center justify-between">
                       <div><div className="font-medium text-slate-900">{m.drug_name}</div><div className="text-sm text-slate-600">{m.dose} · {m.frequency}</div>{m.indication && <div className="text-xs text-slate-500 mt-1">Indication: {m.indication}</div>}</div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${m.status === 'ACTIVE' ? 'bg-accent-100 text-accent-700' : 'bg-slate-100 text-slate-600'}`}>{m.status}</span>
+                      <div className="flex items-center gap-3">
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${m.status === 'ACTIVE' ? 'bg-accent-100 text-accent-700' : 'bg-slate-100 text-slate-600'}`}>{m.status}</span>
+                        <button onClick={() => deleteItem('medications', m.id, m.drug_name)} className="text-slate-400 hover:text-red-600"><Icons.Trash className="w-4 h-4" /></button>
+                      </div>
                     </div>
                   ))}</div>
                 )}
@@ -775,8 +883,8 @@
                 {!pet.vaccinations?.length ? <div className="p-12 text-center text-slate-500">No vaccinations recorded</div> : (
                   <div className="overflow-x-auto">
                     <table className="w-full">
-                      <thead className="bg-slate-50 text-left text-sm text-slate-600"><tr><th className="p-4 font-medium">Vaccine</th><th className="p-4 font-medium">Date Administered</th><th className="p-4 font-medium">Valid Until</th><th className="p-4 font-medium">Status</th></tr></thead>
-                      <tbody className="divide-y divide-slate-100">{pet.vaccinations.map((v, i) => { const expired = v.valid_until && new Date(v.valid_until) < new Date(); return <tr key={i}><td className="p-4 font-medium text-slate-900">{v.vaccine_name}</td><td className="p-4 text-slate-600">{v.administration_date}</td><td className="p-4 text-slate-600">{v.valid_until || '—'}</td><td className="p-4"><span className={`px-2.5 py-1 rounded-full text-xs font-medium ${expired ? 'bg-red-100 text-red-700' : 'bg-accent-100 text-accent-700'}`}>{expired ? 'Expired' : 'Current'}</span></td></tr>; })}</tbody>
+                      <thead className="bg-slate-50 text-left text-sm text-slate-600"><tr><th className="p-4 font-medium">Vaccine</th><th className="p-4 font-medium">Date Administered</th><th className="p-4 font-medium">Valid Until</th><th className="p-4 font-medium">Status</th><th className="p-4 font-medium"></th></tr></thead>
+                      <tbody className="divide-y divide-slate-100">{pet.vaccinations.map((v, i) => { const expired = v.valid_until && new Date(v.valid_until) < new Date(); return <tr key={i}><td className="p-4 font-medium text-slate-900">{v.vaccine_name}</td><td className="p-4 text-slate-600">{v.administration_date}</td><td className="p-4 text-slate-600">{v.valid_until || '—'}</td><td className="p-4"><span className={`px-2.5 py-1 rounded-full text-xs font-medium ${expired ? 'bg-red-100 text-red-700' : 'bg-accent-100 text-accent-700'}`}>{expired ? 'Expired' : 'Current'}</span></td><td className="p-4"><button onClick={() => deleteItem('vaccinations', v.id, v.vaccine_name)} className="text-slate-400 hover:text-red-600"><Icons.Trash className="w-4 h-4" /></button></td></tr>; })}</tbody>
                     </table>
                   </div>
                 )}
@@ -806,6 +914,7 @@
                         <div className="flex items-center gap-2">
                           <button onClick={() => setSelectedDoc(doc)} className="px-3 py-1.5 text-sm text-primary-600 hover:bg-primary-50 rounded-lg font-medium">View Details</button>
                           <button onClick={() => viewPdf(doc.id, doc.filename)} className="px-3 py-1.5 text-sm border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg font-medium flex items-center gap-1"><Icons.Download className="w-4 h-4" /> Open PDF</button>
+                          <button onClick={() => deleteItem('documents', doc.id, doc.filename)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Icons.Trash className="w-4 h-4" /></button>
                         </div>
                       </div>
                     ))}
@@ -831,9 +940,9 @@
                 ) : (
                   <div className="divide-y divide-slate-100">
                     {recordings.map((rec, i) => (
-                      <div key={i} className="p-4 hover:bg-slate-50 cursor-pointer" onClick={() => setSelectedRecording(rec)}>
+                      <div key={i} className="p-4 hover:bg-slate-50">
                         <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setSelectedRecording(rec)}>
                             <div className="w-10 h-10 bg-red-50 rounded-lg flex items-center justify-center text-red-600">
                               <Icons.Mic />
                             </div>
@@ -842,7 +951,10 @@
                               <p className="text-sm text-slate-500">{rec.recordedAt} · {Math.floor(rec.duration / 60)}:{(rec.duration % 60).toString().padStart(2, '0')}</p>
                             </div>
                           </div>
-                          <span className="text-primary-600 text-sm font-medium">View details →</span>
+                          <div className="flex items-center gap-2">
+                            <span onClick={() => setSelectedRecording(rec)} className="text-primary-600 text-sm font-medium cursor-pointer">View details →</span>
+                            <button onClick={() => deleteItem('recordings', rec.id, rec.title)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Icons.Trash className="w-4 h-4" /></button>
+                          </div>
                         </div>
                         {rec.summary && <p className="text-sm text-slate-600 ml-13 pl-13">{rec.summary}</p>}
                       </div>
@@ -855,8 +967,10 @@
           {showShare && <ShareModal pet={pet} onClose={() => setShowShare(false)} />}
           {showUpload && <UploadModal pet={pet} onClose={() => setShowUpload(false)} onSuccess={refreshPet} />}
           {showRecord && <RecordModal pet={pet} onClose={() => setShowRecord(false)} onSuccess={refreshPet} />}
+          {showImageUpload && <ImageUploadModal pet={pet} onClose={() => setShowImageUpload(false)} onSuccess={refreshPet} />}
           {selectedDoc && <DocumentDetailModal doc={selectedDoc} onClose={() => setSelectedDoc(null)} />}
           {selectedRecording && <RecordingDetailModal recording={selectedRecording} onClose={() => setSelectedRecording(null)} />}
+          {selectedImage && <ImageViewModal image={selectedImage} onClose={() => setSelectedImage(null)} />}
           {showInsuranceExport && <InsuranceExportModal pet={pet} onClose={() => setShowInsuranceExport(false)} />}
           {showReferralExport && <ReferralExportModal pet={pet} onClose={() => setShowReferralExport(false)} />}
         </div>
@@ -1785,6 +1899,183 @@
             <div className="p-5 border-t border-slate-200">
               <button onClick={onClose} className="w-full px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium">Close</button>
             </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Image Upload Modal
+    function ImageUploadModal({ pet, onClose, onSuccess }) {
+      const [uploading, setUploading] = useState(false);
+      const [form, setForm] = useState({
+        modality: 'Radiograph',
+        bodyPart: '',
+        description: '',
+        studyDate: new Date().toISOString().split('T')[0]
+      });
+      const fileInputRef = React.useRef(null);
+
+      const modalities = ['Radiograph', 'Ultrasound', 'CT', 'MRI', 'Endoscopy', 'Fluoroscopy', 'Other'];
+      const bodyParts = ['Thorax', 'Abdomen', 'Head', 'Spine', 'Pelvis', 'Forelimb', 'Hindlimb', 'Whole Body', 'Other'];
+
+      const handleUpload = async () => {
+        const file = fileInputRef.current?.files[0];
+        if (!file) return alert('Please select an image file');
+
+        setUploading(true);
+        try {
+          const formData = new FormData();
+          formData.append('image', file);
+          formData.append('modality', form.modality);
+          formData.append('bodyPart', form.bodyPart);
+          formData.append('description', form.description);
+          formData.append('studyDate', form.studyDate);
+
+          await api.upload(`/api/pets/${pet.id}/images`, formData);
+          onSuccess();
+          onClose();
+        } catch (err) {
+          alert('Upload failed: ' + err.message);
+        } finally {
+          setUploading(false);
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-slate-900">Upload Medical Image</h2>
+              <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><Icons.X /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Image File</label>
+                <input 
+                  type="file" 
+                  ref={fileInputRef}
+                  accept=".jpg,.jpeg,.png,.dcm,image/*,application/dicom"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                />
+                <p className="text-xs text-slate-500 mt-1">Accepts JPEG, PNG, or DICOM (.dcm) files</p>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Modality</label>
+                  <select
+                    value={form.modality}
+                    onChange={e => setForm({...form, modality: e.target.value})}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  >
+                    {modalities.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Body Part</label>
+                  <select
+                    value={form.bodyPart}
+                    onChange={e => setForm({...form, bodyPart: e.target.value})}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  >
+                    <option value="">Select...</option>
+                    {bodyParts.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Study Date</label>
+                <input
+                  type="date"
+                  value={form.studyDate}
+                  onChange={e => setForm({...form, studyDate: e.target.value})}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Description (optional)</label>
+                <textarea
+                  value={form.description}
+                  onChange={e => setForm({...form, description: e.target.value})}
+                  placeholder="e.g., 2-view thorax for cough evaluation"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg resize-none"
+                  rows={2}
+                />
+              </div>
+              
+              <div className="flex gap-3 pt-2">
+                <button onClick={onClose} className="flex-1 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 font-medium">Cancel</button>
+                <button 
+                  onClick={handleUpload} 
+                  disabled={uploading}
+                  className="flex-1 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 font-medium"
+                >
+                  {uploading ? 'Uploading...' : 'Upload Image'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Image View Modal
+    function ImageViewModal({ image, onClose }) {
+      const [fullImage, setFullImage] = useState(null);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        api.get(`/api/images/${image.id}`).then(data => {
+          setFullImage(data);
+          setLoading(false);
+        }).catch(() => setLoading(false));
+      }, [image.id]);
+
+      return (
+        <div className="fixed inset-0 bg-slate-900/90 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
+              <div>
+                <h2 className="font-bold text-slate-900">{image.filename}</h2>
+                <p className="text-sm text-slate-500">{image.modality} · {image.body_part || 'Unspecified'} · {image.study_date}</p>
+              </div>
+              <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><Icons.X /></button>
+            </div>
+            <div className="flex-1 overflow-auto p-4 bg-black flex items-center justify-center">
+              {loading ? (
+                <p className="text-white">Loading image...</p>
+              ) : fullImage?.image_data ? (
+                image.image_type === 'DICOM' ? (
+                  <div className="text-center text-white">
+                    <Icons.FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                    <p className="mb-2">DICOM file</p>
+                    <p className="text-sm text-slate-400">DICOM viewer coming soon</p>
+                    <a 
+                      href={fullImage.image_data} 
+                      download={image.filename}
+                      className="inline-block mt-4 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+                    >
+                      Download File
+                    </a>
+                  </div>
+                ) : (
+                  <img 
+                    src={fullImage.image_data} 
+                    alt={image.description || image.filename}
+                    className="max-w-full max-h-full object-contain"
+                  />
+                )
+              ) : (
+                <p className="text-white">Failed to load image</p>
+              )}
+            </div>
+            {image.description && (
+              <div className="p-4 border-t border-slate-200 bg-slate-50">
+                <p className="text-sm text-slate-600"><strong>Description:</strong> {image.description}</p>
+              </div>
+            )}
           </div>
         </div>
       );
