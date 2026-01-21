@@ -135,12 +135,18 @@ async function initDb() {
 // Auth middleware
 function auth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) return res.status(401).json({ error: 'No token' });
+  if (!token) {
+    console.log('Auth failed: No token for', req.method, req.path);
+    return res.status(401).json({ error: 'No token' });
+  }
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.userId = decoded.userId;
     next();
-  } catch { res.status(401).json({ error: 'Invalid token' }); }
+  } catch (e) {
+    console.log('Auth failed: Invalid token for', req.method, req.path, e.message);
+    res.status(401).json({ error: 'Invalid token' });
+  }
 }
 
 // Helper functions
