@@ -8,7 +8,8 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { v4: uuidv4 } = require('uuid');
-const OpenAI = require('openai');
+const axios = require('axios');
+const FormData = require('form-data');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -510,23 +511,38 @@ app.post('/api/pets/:id/recordings', auth, upload.single('audio'), async (req, r
     const title = req.body.title || `Exam Recording ${new Date().toLocaleDateString()}`;
     console.log(`Processing recording: ${title} (${duration}s, ${req.file.size} bytes)`);
     
-    // Transcribe with Whisper using temp file
-    const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
-    
+    // Transcribe with Whisper using axios + form-data
     // Write buffer to temp file
     const tempPath = path.join(os.tmpdir(), `recording-${uuidv4()}.webm`);
     fs.writeFileSync(tempPath, req.file.buffer);
+    console.log(`Temp file created: ${tempPath}, size: ${fs.statSync(tempPath).size} bytes`);
     
     let transcript;
     try {
-      const transcription = await openai.audio.transcriptions.create({
-        file: fs.createReadStream(tempPath),
-        model: 'whisper-1',
+      const formData = new FormData();
+      formData.append('file', fs.createReadStream(tempPath), {
+        filename: 'recording.webm',
+        contentType: 'audio/webm'
       });
-      transcript = transcription.text;
+      formData.append('model', 'whisper-1');
+      
+      const whisperRes = await axios.post(
+        'https://api.openai.com/v1/audio/transcriptions',
+        formData,
+        {
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            ...formData.getHeaders()
+          },
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity
+        }
+      );
+      
+      transcript = whisperRes.data.text;
     } catch (whisperError) {
-      console.error('Whisper error:', whisperError);
-      throw new Error(`Transcription failed: ${whisperError.message}`);
+      console.error('Whisper error:', whisperError.response?.data || whisperError.message);
+      throw new Error(`Transcription failed: ${JSON.stringify(whisperError.response?.data || whisperError.message)}`);
     } finally {
       // Clean up temp file
       try { fs.unlinkSync(tempPath); } catch (e) {}
