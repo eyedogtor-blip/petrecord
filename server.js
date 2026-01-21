@@ -5,6 +5,8 @@ const { Pool } = require('pg');
 const QRCode = require('qrcode');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const OpenAI = require('openai');
 
@@ -508,19 +510,26 @@ app.post('/api/pets/:id/recordings', auth, upload.single('audio'), async (req, r
     const title = req.body.title || `Exam Recording ${new Date().toLocaleDateString()}`;
     console.log(`Processing recording: ${title} (${duration}s, ${req.file.size} bytes)`);
     
-    // Transcribe with Whisper using OpenAI SDK
+    // Transcribe with Whisper using temp file
     const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+    
+    // Write buffer to temp file
+    const tempPath = path.join(os.tmpdir(), `recording-${uuidv4()}.webm`);
+    fs.writeFileSync(tempPath, req.file.buffer);
     
     let transcript;
     try {
       const transcription = await openai.audio.transcriptions.create({
-        file: await OpenAI.toFile(req.file.buffer, 'recording.webm', { type: req.file.mimetype || 'audio/webm' }),
+        file: fs.createReadStream(tempPath),
         model: 'whisper-1',
       });
       transcript = transcription.text;
     } catch (whisperError) {
       console.error('Whisper error:', whisperError);
       throw new Error(`Transcription failed: ${whisperError.message}`);
+    } finally {
+      // Clean up temp file
+      try { fs.unlinkSync(tempPath); } catch (e) {}
     }
     
     console.log('Transcript:', transcript.substring(0, 200));
